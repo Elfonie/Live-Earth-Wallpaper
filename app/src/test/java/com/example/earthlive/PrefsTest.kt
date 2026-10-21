@@ -15,5 +15,5 @@ class PrefsTest {
     }
 
     @Test
-    fun everythingOffSetsAllBits() = assertEquals(16 or 2048 or 1024 or 4096 or 256 or 512 or 64, Prefs.skipMask { false })
+    fun everythingOffSetsAllBits() = assertEquals(16 or 2048 or 1024 or 4096 or 256 or 512 or 64 or 8192, Prefs.skipMask { false })
 }

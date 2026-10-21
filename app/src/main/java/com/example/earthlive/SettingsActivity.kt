@@ -33,7 +33,7 @@ class SettingsActivity : Activity() {
         val picture = Ui.card(this)
         picture.addView(slider(R.string.earth_size, R.string.earth_size_hint, 70, 100, 1, prefs.getInt(Prefs.EARTH_SIZE, Prefs.DEFAULT_SIZE), { "$it %" }) { prefs.edit().putInt(Prefs.EARTH_SIZE, it).apply() })
         picture.addView(Ui.divider(this))
-        picture.addView(slider(R.string.orbit, R.string.orbit_hint, 6, 60, 1, prefs.getInt(Prefs.ORBIT_MINUTES, Prefs.DEFAULT_ORBIT), { getString(R.string.minutes, it) }) { prefs.edit().putInt(Prefs.ORBIT_MINUTES, it).apply() })
+        picture.addView(slider(R.string.orbit, R.string.orbit_hint, 6, 120, 1, prefs.getInt(Prefs.ORBIT_MINUTES, Prefs.DEFAULT_ORBIT), { getString(R.string.minutes, it) }) { prefs.edit().putInt(Prefs.ORBIT_MINUTES, it).apply() })
         picture.addView(Ui.divider(this))
         picture.addView(Ui.text(this, getString(R.string.orbit_direction), 16f, R.color.text, bold = true))
         picture.addView(Ui.body(this, getString(R.string.orbit_direction_hint)), Ui.lp(this, 4))
@@ -83,6 +83,8 @@ class SettingsActivity : Activity() {
         performance.addView(slider(R.string.render_scale, R.string.render_scale_hint, 50, 100, 5, prefs.getInt(Prefs.RENDER_SCALE, Prefs.DEFAULT_RENDER_SCALE), { "$it %" }) { prefs.edit().putInt(Prefs.RENDER_SCALE, it).apply() })
         performance.addView(Ui.divider(this))
         performance.addView(toggle("sharp_clouds", R.string.sharp_clouds, R.string.sharp_clouds_hint))
+        performance.addView(Ui.divider(this))
+        performance.addView(toggle("sun_moon_blur", R.string.sun_blur, R.string.sun_blur_hint))
         column.addView(performance)
 
         column.addView(Ui.button(this, getString(R.string.reset), primary = false) {

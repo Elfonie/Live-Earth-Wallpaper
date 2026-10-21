@@ -34,7 +34,7 @@ The APK on the Releases page is a debug-signed build (it contains the profiling 
 
 Open **Earth Live** from the app drawer: the start page checks that your GPU can run it (OpenGL ES 3.0, ASTC textures,
 8k textures), sets the wallpaper, and opens the **Settings** (Earth size, orbit time, camera latitude, star brightness, cloud speed (in %) and direction,
-direction of the Earth's turning, frame rate 5/10/20/30, render resolution, sharp cloud edges, and switches for clouds, cirrus, city lights, aurora, airglow and
+direction of the Earth's turning, smoothing of the Sun and Moon, frame rate 5/10/20/30, render resolution, sharp cloud edges, and switches for clouds, cirrus, city lights, aurora, airglow and
 lightning; changes apply at once) and the **Credits**. If the picture ever fails
 to start, the start page shows the reason.
 

@@ -62,5 +62,7 @@
     <string name="render_scale_hint">Das Bild wird mit diesem Anteil der Bildschirmauflösung berechnet und gedehnt. Niedriger schont den Akku und ist etwas weicher.</string>
     <string name="sharp_clouds">Scharfe Wolkenkanten</string>
     <string name="sharp_clouds_hint">Glättet die Wolkenkanten (Kantenglättung). Ausgeschaltet spart etwas Strom.</string>
+    <string name="sun_blur">Sonne und Mond glätten</string>
+    <string name="sun_blur_hint">Sonne und Mond wandern viel schneller über das Bild als die Erde. Das verwischt sie leicht entlang ihres Weges, damit sie bei niedriger Bildrate gleiten statt zu springen.</string>
     <string name="reset">Auf Standard zurücksetzen</string>
 </resources>

@@ -33,6 +33,7 @@ class EarthRenderer(
     private var starGain = 1f
     private var cloudRate = 1.0
     private var orbitDirection = 1
+    private var frameSeconds = 0.1 // the exposure of the Sun and Moon motion blur: one frame
     private var renderW = 1
     private var renderH = 1
     private var program = 0
@@ -115,6 +116,7 @@ class EarthRenderer(
         featureMask = v.skipMask
         starGain = v.starGain
         cloudRate = v.cloudRate
+        frameSeconds = 1.0 / v.fps
         orbitDirection = v.orbitDirection
         val scaleChanged = v.renderScale != renderScale
         renderScale = v.renderScale
@@ -130,6 +132,16 @@ class EarthRenderer(
         if (cloudRate == 0.0) return 0f
         val lap = Prefs.CLOUD_LAP_SECONDS / Math.abs(cloudRate)
         return (Math.signum(cloudRate) * ((nowMs / 1000.0) % lap) / lap).toFloat()
+    }
+
+    /** How far the camera turned about the Earth's north axis (radians, Earth-fixed frame) during the last frame. */
+    private fun cameraTurn(orbit: OrbitCamera, jd: Double): Double {
+        val now = orbit.pose(jd).position
+        val before = orbit.pose(jd - frameSeconds / 86400.0).position
+        var turn = Math.atan2(now[2], now[0]) - Math.atan2(before[2], before[0])
+        while (turn > Math.PI) turn -= 2 * Math.PI
+        while (turn < -Math.PI) turn += 2 * Math.PI
+        return turn
     }
 
     /** Size of the offscreen picture: the screen's size times the user's render scale (only the half-float path can scale). */
@@ -167,6 +179,7 @@ class EarthRenderer(
         GLES30.glUniformMatrix3fv(loc("uSkyRot"), 1, false, SkyFrame.toUniform(SkyFrame.earthFixedToSky(jd, pose)), 0)
         GLES30.glUniform1f(loc("uCloudShift"), cloudShift(nowMs))
         GLES30.glUniform1f(loc("uStarGain"), starGain)
+        GLES30.glUniform1f(loc("uSkyBlur"), cameraTurn(orbit, jd).toFloat())
         GLES30.glUniform1i(loc("uSkip"), skipMask or featureMask)
         GLES30.glUniform1f(loc("uAuroraPhase"), ((nowMs / 1000.0) % AURORA_PERIOD_SECONDS / AURORA_PERIOD_SECONDS).toFloat())
         GLES30.glUniform1f(loc("uTime"), ((nowMs / 1000.0) % 3600.0).toFloat())

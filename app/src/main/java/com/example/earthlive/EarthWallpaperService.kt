@@ -117,7 +117,7 @@ class EarthWallpaperService : WallpaperService() {
                 Log.d(TAG, "cadence %.1f ms engine %x".format((frameTimeNanos - lastFrameNanos) / 1e6, System.identityHashCode(this)))
             }
             lastFrameNanos = frameTimeNanos
-            drawFrame(r)
+            drawFrame(r, frameTimeNanos)
 
             // Next frame one interval after this vsync. Posting a little early makes the callback fire on the very
             // vsync that is one interval away; if drawing took longer than an interval, resync instead of piling up.
@@ -130,10 +130,12 @@ class EarthWallpaperService : WallpaperService() {
             choreographer?.postFrameCallbackDelayed(frameCallback, delayMs)
         }
 
-        private fun drawFrame(r: EarthRenderer) {
+        private fun drawFrame(r: EarthRenderer, frameTimeNanos: Long) {
             if (logTimings) debugControl(r)
             val start = SystemClock.elapsedRealtimeNanos()
-            if (!r.draw(if (fixedTimeMs != 0L) fixedTimeMs else System.currentTimeMillis())) return // surface size not known yet
+            // the scene's time is that of the vsync this callback belongs to, not of the moment the drawing starts: no jitter in the motion
+            val vsyncMs = System.currentTimeMillis() - (System.nanoTime() - frameTimeNanos) / 1_000_000L
+            if (!r.draw(if (fixedTimeMs != 0L) fixedTimeMs else vsyncMs)) return // surface size not known yet
             if (logTimings) {
                 GLES30.glFinish()
                 Log.d(TAG, "frame %.1f ms".format((SystemClock.elapsedRealtimeNanos() - start) / 1e6))

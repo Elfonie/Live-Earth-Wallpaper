@@ -7,7 +7,7 @@ import android.content.SharedPreferences
 object Prefs {
     const val FILE = "earth_live"
     const val EARTH_SIZE = "earth_size"           // percent of the screen width, 70..100
-    const val ORBIT_MINUTES = "orbit_minutes"      // one lap around the Earth, 6..60
+    const val ORBIT_MINUTES = "orbit_minutes"      // one lap around the Earth, 6..120
     const val LATITUDE = "latitude"               // degrees, -60..60: the camera circles at this latitude
     const val STAR_BRIGHTNESS = "star_brightness" // percent, 25..150
     const val FPS = "fps"                         // one of FPS_CHOICES
@@ -30,7 +30,7 @@ object Prefs {
     /** Feature switch key -> the SKIP_* bit of earth.frag that is set while the feature is off. */
     val FEATURES: Map<String, Int> = linkedMapOf(
         "aurora" to 16, "lightning" to 2048, "airglow" to 1024, "cirrus" to 4096, "clouds" to 256, "city_lights" to 512,
-        "sharp_clouds" to 64,
+        "sharp_clouds" to 64, "sun_moon_blur" to 8192,
     )
 
     class Values(
@@ -51,7 +51,7 @@ object Prefs {
 
     fun read(prefs: SharedPreferences) = Values(
         fill = prefs.getInt(EARTH_SIZE, DEFAULT_SIZE).coerceIn(70, 100) / 100.0,
-        periodSeconds = prefs.getInt(ORBIT_MINUTES, DEFAULT_ORBIT).coerceIn(6, 60) * 60.0,
+        periodSeconds = prefs.getInt(ORBIT_MINUTES, DEFAULT_ORBIT).coerceIn(6, 120) * 60.0,
         latitudeDeg = prefs.getFloat(LATITUDE, DEFAULT_LATITUDE).coerceIn(-60f, 60f).toDouble(),
         starGain = prefs.getInt(STAR_BRIGHTNESS, DEFAULT_STARS).coerceIn(25, 150) / 100f,
         fps = prefs.getInt(FPS, DEFAULT_FPS).takeIf { it in FPS_CHOICES } ?: DEFAULT_FPS,

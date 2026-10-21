@@ -207,6 +207,8 @@ def main():
         prog["uSkip"].value = int(os.environ.get("SKIP", 0))
     if "uAuroraPhase" in prog:
         prog["uAuroraPhase"].value = float(os.environ.get("AURORA_PHASE", 0.0))
+    if "uSkyBlur" in prog:
+        prog["uSkyBlur"].value = float(os.environ.get("SKY_BLUR", 0.0))
     if "uStarGain" in prog:
         prog["uStarGain"].value = 1.0
     prog["uCloudShift"].value = float(os.environ.get("CLOUD_SHIFT", 0.0))

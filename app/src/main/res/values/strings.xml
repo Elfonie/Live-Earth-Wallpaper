@@ -62,5 +62,7 @@
     <string name="render_scale_hint">The picture is drawn at this share of your screen\'s resolution and stretched. Lower is easier on the battery and a little softer.</string>
     <string name="sharp_clouds">Sharp cloud edges</string>
     <string name="sharp_clouds_hint">Smooths the edges of the clouds (anti-aliasing). Switching it off saves some power.</string>
+    <string name="sun_blur">Smooth Sun and Moon</string>
+    <string name="sun_blur_hint">The Sun and the Moon cross the picture much faster than the Earth. This smears them slightly along their path, so they glide instead of jumping at low frame rates.</string>
     <string name="reset">Reset to defaults</string>
 </resources>

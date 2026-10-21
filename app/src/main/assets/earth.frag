@@ -34,6 +34,7 @@ uniform float uSolarEclipse; // 1 when the Moon is close enough to the Sun's dir
 uniform float uLunarEclipse; // 1 when the Moon is close enough to the anti-Sun direction to enter the Earth's shadow
 uniform vec3 uEclipticPole;  // north pole of the ecliptic in the Earth-fixed frame (for the zodiacal light)
 uniform int uSkip;          // bits that switch parts of the picture off (0 = everything on), see SKIP_*: the user's settings, and profiling
+uniform float uSkyBlur;   // radians the camera turned about the north axis during one frame (0: no motion blur of the Sun and the Moon)
 uniform float uStarGain;   // the user's star brightness, 1 = as drawn by default
 uniform float uAuroraPhase; // 0..1 around every 2 minutes; the aurora only uses periodic functions of it, so it never jumps
 uniform float uCloudShift; // the cloud layer's eastward drift against the ground, in turns (0..1)
@@ -102,8 +103,9 @@ const float SUN_RADIUS = 0.00465;
 const float R_MOON = 0.2725;  // Earth radii
 const float MOON_GAIN = 0.5;
 
+const int BLUR_TAPS = 6;
 const int SKIP_STARS = 1, SKIP_MILKY = 2, SKIP_ATMO_BACK = 4, SKIP_ATMO_FRONT = 8, SKIP_AURORA = 16, SKIP_SUN_MOON = 32,
-          SKIP_CLOUD_TAPS = 64, SKIP_RELIEF = 128, SKIP_CLOUDS = 256, SKIP_LIGHTS = 512, SKIP_UPPER_AIR = 1024, SKIP_LIGHTNING = 2048, SKIP_CIRRUS = 4096;
+          SKIP_CLOUD_TAPS = 64, SKIP_RELIEF = 128, SKIP_CLOUDS = 256, SKIP_LIGHTS = 512, SKIP_UPPER_AIR = 1024, SKIP_LIGHTNING = 2048, SKIP_CIRRUS = 4096, SKIP_SUN_BLUR = 8192;
 
 const float OCEAN_ROUGHNESS = 0.45; // GGX alpha 0.2, a sea at about 7 m/s: a wide soft sheen instead of a hot spot
 // The cloud map is infrared: cold land (autumn Europe, Russia, snow) is as bright as cloud. Over land the regional
@@ -261,10 +263,13 @@ vec3 aurora(vec3 ro, vec3 rd, float tca, float d2) {
     return sum * AURORA_GAIN;
 }
 
+vec3 gSun;     // the Sun's direction and the Moon's place as sunBody and moonBody use them: the real ones, or turned back
+vec3 gMoonPos; // in time for one tap of the motion blur
+
 // The Sun as a limb-darkened disc with a soft glow around it; the caller takes care of occlusion and reddening.
 vec3 sunBody(vec3 rd) {
-    if (dot(rd, uSunDir) < 0.9) return vec3(0.0);
-    float ang = length(cross(rd, uSunDir));
+    if (dot(rd, gSun) < 0.9) return vec3(0.0);
+    float ang = length(cross(rd, gSun));
     float mu = sqrt(max(1.0 - (ang / SUN_RADIUS) * (ang / SUN_RADIUS), 0.0));
     float disc = smoothstep(SUN_RADIUS + uPixelAngle, SUN_RADIUS - uPixelAngle, ang);
     float glow = 0.9 * exp(-ang / 0.012) + 0.06 * exp(-ang / 0.04);
@@ -316,7 +321,7 @@ float sunCoveredByMoon(vec3 p) {
 // The Moon as a sphere at its true place and distance (so the parallax from the orbit is right), with its phase from the
 // Sun's direction and the near side turned toward the Earth. Returns radiance and coverage.
 vec4 moonBody(vec3 ro, vec3 rd) {
-    vec3 oc = ro - uMoonPos;
+    vec3 oc = ro - gMoonPos;
     float b = dot(oc, rd);
     if (b > 0.0) return vec4(0.0);
     float t = -b;
@@ -326,21 +331,21 @@ vec4 moonBody(vec3 ro, vec3 rd) {
     if (dm > R_MOON + 2.0 * px) return vec4(0.0);
     float cover = smoothstep(R_MOON + px, R_MOON - px, dm);
     vec3 surface = ro + rd * (t - sqrt(max(R_MOON * R_MOON - d2m, 0.0)));
-    vec3 n = normalize(surface - uMoonPos);
-    vec3 ex = normalize(-uMoonPos);                         // toward the Earth: longitude 0
+    vec3 n = normalize(surface - gMoonPos);
+    vec3 ex = normalize(-gMoonPos);                         // toward the Earth: longitude 0
     vec3 ez = normalize(vec3(0.0, 1.0, 0.0) - ex.y * ex);  // north
     vec3 ey = cross(ez, ex);                                // east
     vec2 uv = vec2(0.5 + atan(dot(n, ey), dot(n, ex)) / (2.0 * PI), 0.5 - asin(clamp(dot(n, ez), -1.0, 1.0)) / PI);
     float lod = log2(max(px * 2048.0 / (2.0 * PI * R_MOON), 1.0));
     vec3 albedo = textureLod(uMoon, uv, lod).rgb;
-    float mu0 = max(dot(n, uSunDir), 0.0);
+    float mu0 = max(dot(n, gSun), 0.0);
     float mu = max(dot(n, -rd), 0.02);
     float shade = 2.0 * mu0 / (mu0 + mu) + 0.01; // Lommel-Seeliger: a flat full moon; a trace of Earthshine on the dark side
     vec3 lit = vec3(shade);
     if (uLunarEclipse > 0.5) { // the Earth in front of the Sun, seen from this spot of the Moon; its air lets a little red light through
         float dEarth = length(surface);
         float rEarth = asin(min(1.0 / dEarth, 1.0)) * 1.02;
-        float shadowed = dot(-surface, uSunDir) > 0.0 ? lensFraction(SUN_ANGULAR_RADIUS, rEarth, length(cross(-surface / dEarth, uSunDir))) : 0.0;
+        float shadowed = dot(-surface, gSun) > 0.0 ? lensFraction(SUN_ANGULAR_RADIUS, rEarth, length(cross(-surface / dEarth, gSun))) : 0.0;
         lit = shade * (1.0 - shadowed) + shadowed * 0.04 * vec3(1.0, 0.33, 0.12);
     }
     return vec4(albedo * (MOON_GAIN * SUN_E) * lit, cover);
@@ -676,14 +681,35 @@ void main() {
         }
         milky += zodiacal(rd);
         float limb = 1.0 - pow(airT.g, 1.5); // how much air the starlight crosses
-        vec4 moon = (uSkip & SKIP_SUN_MOON) == 0 ? moonBody(ro, rd) : vec4(0.0);
+        gSun = uSunDir;
+        gMoonPos = uMoonPos;
 #ifdef STAR_SPRITES
         vec3 stars = vec3(0.0); // drawn as sprites into the same buffer after this pass
 #else
         vec3 stars = (uSkip & SKIP_STARS) == 0 ? starfield(dirCel, limb) * uStarGain : vec3(0.0);
 #endif
-        vec3 sun = (uSkip & SKIP_SUN_MOON) == 0 ? sunBody(rd) : vec3(0.0);
-        sky = (mix(milky + stars, moon.rgb, moon.a) + sun * (1.0 - moon.a)) * airT;
+        vec3 backdrop = milky + stars;
+        if ((uSkip & SKIP_SUN_MOON) != 0) {
+            sky = backdrop * airT;
+        } else if ((uSkip & SKIP_SUN_BLUR) != 0 || abs(uSkyBlur) < 1e-6) {
+            vec4 moon = moonBody(ro, rd);
+            sky = (mix(backdrop, moon.rgb, moon.a) + sunBody(rd) * (1.0 - moon.a)) * airT;
+        } else {
+            // The Sun and the Moon move across the picture much faster than the Earth (they are fixed in space while the
+            // camera circles). At a low frame rate that shows as jumps, so they are smeared over the distance they travel in
+            // one frame: the camera's turn is a rotation about the north axis, so earlier places of the Sun and the Moon are
+            // the real ones turned about that axis.
+            vec3 acc = vec3(0.0);
+            for (int k = 0; k < BLUR_TAPS; k++) {
+                float a = uSkyBlur * (0.5 - float(k) / float(BLUR_TAPS - 1));
+                float c = cos(a), s = sin(a);
+                gSun = vec3(c * uSunDir.x - s * uSunDir.z, uSunDir.y, s * uSunDir.x + c * uSunDir.z);
+                gMoonPos = vec3(c * uMoonPos.x - s * uMoonPos.z, uMoonPos.y, s * uMoonPos.x + c * uMoonPos.z);
+                vec4 moon = moonBody(ro, rd);
+                acc += mix(backdrop, moon.rgb, moon.a) + sunBody(rd) * (1.0 - moon.a);
+            }
+            sky = acc / float(BLUR_TAPS) * airT;
+        }
     }
     vec3 col = mix(airLight + sky, groundTotal, covE);
     col = mix(col, cloudTotal, alphaC * covC);
