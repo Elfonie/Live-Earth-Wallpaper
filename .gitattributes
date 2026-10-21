@@ -1,0 +1,7 @@
+* text=auto
+gradlew text eol=lf
+*.ktx binary
+*.bin binary
+*.jpg binary
+*.webp binary
+*.png binary
