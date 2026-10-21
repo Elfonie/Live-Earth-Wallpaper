@@ -32,6 +32,17 @@ class OrbitCameraTest {
     }
 
     @Test
+    fun reversedOrbitMirrorsTheMotionAndKeepsDistanceAndLatitude() {
+        val reversed = OrbitCamera(distance, direction = -1)
+        val t = start + 0.0123
+        val a = camera.inertialPosition(t)
+        val b = reversed.inertialPosition(t)
+        assertEquals(a[0], b[0], 1e-9) // x and z stay, the sense of travel (y) flips
+        assertEquals(-a[1], b[1], 1e-9)
+        assertEquals(a[2], b[2], 1e-9)
+    }
+
+    @Test
     fun cameraStaysAtTheSameLatitude() {
         for (second in 0 until OrbitCamera.PERIOD_SECONDS.toInt() step 5) { // one full orbit
             val p = camera.pose(start + second / 86400.0).position

@@ -31,7 +31,8 @@ class EarthRenderer(
     private var periodSeconds = OrbitCamera.PERIOD_SECONDS
     private var renderScale = 1.0 // the picture is drawn at this fraction of the screen's size and stretched
     private var starGain = 1f
-    private var cloudLapSeconds = OrbitCamera.CLOUD_DRIFT_SECONDS.toInt()
+    private var cloudRate = 1.0
+    private var orbitDirection = 1
     private var renderW = 1
     private var renderH = 1
     private var program = 0
@@ -113,7 +114,8 @@ class EarthRenderer(
         periodSeconds = v.periodSeconds
         featureMask = v.skipMask
         starGain = v.starGain
-        cloudLapSeconds = v.cloudLapSeconds
+        cloudRate = v.cloudRate
+        orbitDirection = v.orbitDirection
         val scaleChanged = v.renderScale != renderScale
         renderScale = v.renderScale
         if (viewWidth > 1) {
@@ -121,6 +123,13 @@ class EarthRenderer(
             buildCamera()
             sprites?.invalidate() // the star list belongs to the old camera position
         }
+    }
+
+    /** The cloud layer's drift against the ground in turns, from real time (a lap takes an hour at a rate of 1; negative: westward). */
+    private fun cloudShift(nowMs: Long): Float {
+        if (cloudRate == 0.0) return 0f
+        val lap = Prefs.CLOUD_LAP_SECONDS / Math.abs(cloudRate)
+        return (Math.signum(cloudRate) * ((nowMs / 1000.0) % lap) / lap).toFloat()
     }
 
     /** Size of the offscreen picture: the screen's size times the user's render scale (only the half-float path can scale). */
@@ -134,7 +143,7 @@ class EarthRenderer(
     private fun buildCamera() {
         val tanY = OrbitCamera.tanHalfY()
         val tanX = tanY * viewWidth / viewHeight
-        camera = OrbitCamera(OrbitCamera.distanceForFill(tanX, fill), latitudeDeg, periodSeconds)
+        camera = OrbitCamera(OrbitCamera.distanceForFill(tanX, fill), latitudeDeg, periodSeconds, orbitDirection)
         tanHalfX = tanX.toFloat()
         tanHalfY = tanY.toFloat()
     }
@@ -156,7 +165,7 @@ class EarthRenderer(
         uniform3("uCamUp", pose.up)
         uniform3("uCamFwd", pose.forward)
         GLES30.glUniformMatrix3fv(loc("uSkyRot"), 1, false, SkyFrame.toUniform(SkyFrame.earthFixedToSky(jd, pose)), 0)
-        GLES30.glUniform1f(loc("uCloudShift"), if (cloudLapSeconds == 0) 0f else ((nowMs / 1000.0) % cloudLapSeconds / cloudLapSeconds).toFloat())
+        GLES30.glUniform1f(loc("uCloudShift"), cloudShift(nowMs))
         GLES30.glUniform1f(loc("uStarGain"), starGain)
         GLES30.glUniform1i(loc("uSkip"), skipMask or featureMask)
         GLES30.glUniform1f(loc("uAuroraPhase"), ((nowMs / 1000.0) % AURORA_PERIOD_SECONDS / AURORA_PERIOD_SECONDS).toFloat())

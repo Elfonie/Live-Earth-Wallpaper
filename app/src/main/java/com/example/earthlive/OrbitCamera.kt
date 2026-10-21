@@ -17,6 +17,7 @@ class OrbitCamera(
     private val distance: Double,
     private val latitudeDeg: Double = LATITUDE_DEG,
     private val periodSeconds: Double = PERIOD_SECONDS,
+    private val direction: Int = 1, // -1 flies the orbit the other way round
 ) {
     /** Camera position (Earth radii) and orthonormal view basis in the Earth-fixed frame. */
     class Pose(val position: DoubleArray, val forward: DoubleArray, val right: DoubleArray, val up: DoubleArray)
@@ -24,7 +25,7 @@ class OrbitCamera(
     /** Position on the orbit in the inertial equatorial frame (x to the vernal equinox, z to the pole). */
     fun inertialPosition(jd: Double): DoubleArray {
         val seconds = (jd - J2000) * 86400.0
-        val u = (seconds % periodSeconds) / periodSeconds * 2 * PI
+        val u = direction * (seconds % periodSeconds) / periodSeconds * 2 * PI
         val lat = Math.toRadians(latitudeDeg)
         return doubleArrayOf(distance * cos(lat) * cos(u), -distance * cos(lat) * sin(u), distance * sin(lat)) // westward: the surface slides from Africa towards Asia
     }

@@ -35,6 +35,13 @@ class SettingsActivity : Activity() {
         picture.addView(Ui.divider(this))
         picture.addView(slider(R.string.orbit, R.string.orbit_hint, 6, 60, 1, prefs.getInt(Prefs.ORBIT_MINUTES, Prefs.DEFAULT_ORBIT), { getString(R.string.minutes, it) }) { prefs.edit().putInt(Prefs.ORBIT_MINUTES, it).apply() })
         picture.addView(Ui.divider(this))
+        picture.addView(Ui.text(this, getString(R.string.orbit_direction), 16f, R.color.text, bold = true))
+        picture.addView(Ui.body(this, getString(R.string.orbit_direction_hint)), Ui.lp(this, 4))
+        picture.addView(
+            choice(listOf(R.string.orbit_normal, R.string.orbit_reverse).map(::getString), { prefs.getInt(Prefs.ORBIT_DIRECTION, 0) }) { prefs.edit().putInt(Prefs.ORBIT_DIRECTION, it).apply() },
+            Ui.lp(this, 14),
+        )
+        picture.addView(Ui.divider(this))
         picture.addView(slider(R.string.latitude, R.string.latitude_hint, -60, 60, 1, prefs.getFloat(Prefs.LATITUDE, Prefs.DEFAULT_LATITUDE).roundToInt(), { latitudeText(it) }) { prefs.edit().putFloat(Prefs.LATITUDE, it.toFloat()).apply() })
         picture.addView(Ui.divider(this))
         picture.addView(slider(R.string.stars, R.string.stars_hint, 25, 150, 5, prefs.getInt(Prefs.STAR_BRIGHTNESS, Prefs.DEFAULT_STARS), { "$it %" }) { prefs.edit().putInt(Prefs.STAR_BRIGHTNESS, it).apply() })
@@ -54,12 +61,12 @@ class SettingsActivity : Activity() {
             details.addView(toggle(key, title, hint))
             details.addView(Ui.divider(this))
         }
-        details.addView(Ui.text(this, getString(R.string.cloud_speed), 16f, R.color.text, bold = true))
-        details.addView(Ui.body(this, getString(R.string.cloud_speed_hint)), Ui.lp(this, 4))
+        details.addView(slider(R.string.cloud_speed, R.string.cloud_speed_hint, 0, 300, 10, prefs.getInt(Prefs.CLOUD_SPEED, Prefs.DEFAULT_CLOUD_SPEED), { "$it %" }) { prefs.edit().putInt(Prefs.CLOUD_SPEED, it).apply() })
+        details.addView(Ui.divider(this))
+        details.addView(Ui.text(this, getString(R.string.cloud_direction), 16f, R.color.text, bold = true))
+        details.addView(Ui.body(this, getString(R.string.cloud_direction_hint)), Ui.lp(this, 4))
         details.addView(
-            choice(listOf(R.string.cloud_still, R.string.cloud_slow, R.string.cloud_normal, R.string.cloud_fast).map(::getString), { prefs.getInt(Prefs.CLOUD_SPEED, Prefs.DEFAULT_CLOUD_SPEED) }) {
-                prefs.edit().putInt(Prefs.CLOUD_SPEED, it).apply()
-            },
+            choice(listOf(R.string.cloud_east, R.string.cloud_west).map(::getString), { prefs.getInt(Prefs.CLOUD_DIRECTION, 0) }) { prefs.edit().putInt(Prefs.CLOUD_DIRECTION, it).apply() },
             Ui.lp(this, 14),
         )
         column.addView(details)
