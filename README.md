@@ -45,6 +45,8 @@ The start page shows whether your device can run Earth Live, whether it is curre
 error if the picture could not be drawn. **Settings** are also reachable from the wallpaper picker; every change applies at
 once to a running wallpaper.
 
+![The start page and the settings](docs/app_ui.jpg)
+
 | Setting | Range | Default | What it does |
 |---|---|---|---|
 | Earth size | 70-100 % | 92 % | share of the screen width the Earth fills |
