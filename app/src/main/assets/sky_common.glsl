@@ -10,7 +10,10 @@ const float STAR_FALLOFF = 0.16;
 #ifndef STAR_MAG_LIMIT
 #define STAR_MAG_LIMIT 99.0 // per-pixel star path only: fainter stars are left out (the PC version sets it, see web/main.js)
 #endif
-const float STAR_PEAK_GAIN = 2.6 * (1.2 / STAR_SIGMA_BASE) * (1.2 / STAR_SIGMA_BASE); // a sharper star keeps its total light
+#ifndef STAR_FLUX_SIGMA
+#define STAR_FLUX_SIGMA STAR_SIGMA_BASE
+#endif
+const float STAR_PEAK_GAIN = 2.6 * (1.2 / STAR_FLUX_SIGMA) * (1.2 / STAR_FLUX_SIGMA); // a sharper star keeps its total light
 const float STAR_SIGMA = STAR_SIGMA_BASE; // point spread width in pixels for faint stars; bright ones bloom
 const float FLICKER_BASE = 0.05;  // everywhere, purely cosmetic: there is no scintillation above the atmosphere
 const float FLICKER_LIMB = 0.45;  // extra for stars seen through the limb, where it is physical

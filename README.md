@@ -118,6 +118,14 @@ not add up (features overlap) and are accurate to about +-1 ms.
 2560 x 1440, Chromium WebGL2, GPU time per frame with `glFinish`-style readback: **1.6-1.9 ms**, so at 30 fps the card is
 busy about 5 % of the time. This was measured in a browser, not inside Wallpaper Engine.
 
+#### PC at other resolutions
+
+The picture covers the same field of view at any resolution (the Earth fills 90 % of the screen height), so 1080p, 1440p and 4K
+show the same scene, only sharper; stars keep their size and brightness relative to the screen. Ultrawide screens show more sky
+at the sides; a screen taller than wide fits the Earth to the width. GPU time per frame on the Intel Arc B580 (browser,
+`?bench=1`): **1920 x 1080: 1.3 ms, 2560 x 1440: 1.6-1.9 ms, 3440 x 1440: 2.2 ms, 3840 x 2160: 3.3 ms**. The "Render resolution"
+property lowers the cost further.
+
 ### How to measure it yourself
 
 Debug builds (not the release APK) read control files from the app's files directory (see [tools/README.md](tools/README.md)). Run

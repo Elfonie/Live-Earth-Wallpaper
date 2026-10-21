@@ -186,7 +186,8 @@
     if (params.has('w')) { canvas.style.width = width + 'px'; canvas.style.height = height + 'px'; }
     createTarget(width, height);
     dist = DISTANCE;
-    tanY = Math.tan(Math.asin(1 / dist)) / settings.fill; // the silhouette spans `fill` of the height
+    // the silhouette spans `fill` of the height, or of the width on a screen that is taller than wide
+    tanY = Math.tan(Math.asin(1 / dist)) / (settings.fill * Math.min(1, width / height));
     tanX = tanY * width / height;
   }
 
@@ -249,8 +250,13 @@
     say('Loading Earth Live ...');
     resize();
     // Stars: a monitor pixel is several times bigger than the phone's, so the same width in pixels looks blurry and the
-    // faint stars crowd the sky; sharper points and a magnitude limit bring the phone's look
-    const defines = '#define HDR_OUT\n#define STAR_SIGMA_BASE ' + settings.starSigma.toFixed(2) + '\n#define STAR_MAG_LIMIT ' + settings.starLimit.toFixed(1) + '\n';
+    // faint stars crowd the sky; sharper points and a magnitude limit bring the phone's look. The picture covers the same
+    // field of view at any resolution, so a star keeps its angular size (starSigma is for 1440 px of height) and brightness;
+    // points narrower than 0.6 px would flicker, those keep the width and give up peak brightness to keep their light.
+    const k = height / 1440;
+    const sigma = Math.max(settings.starSigma * k, 0.6);
+    const defines = '#define HDR_OUT\n#define STAR_SIGMA_BASE ' + sigma.toFixed(3) + '\n#define STAR_FLUX_SIGMA ' + (sigma / k).toFixed(3) +
+      '\n#define STAR_MAG_LIMIT ' + settings.starLimit.toFixed(1) + '\n';
     const [vs, fs, rs, ...rest] = await Promise.all([shader('earth.vert'), shader('earth.frag'), shader('resolve.frag')]);
     const withDefines = (src) => src.replace(/#version 300 es\r?\n/, '#version 300 es\n' + defines);
     const pScene = program(vs, withDefines(fs), 'earth.frag');
