@@ -1,5 +1,6 @@
 package com.example.earthlive
 
+import android.content.SharedPreferences
 import android.opengl.EGL14
 import android.opengl.EGLConfig
 import android.opengl.EGLContext
@@ -22,7 +23,7 @@ class EarthWallpaperService : WallpaperService() {
     override fun onCreateEngine(): Engine = EarthEngine()
 
     /**
-     * Fixed frame rate: while the wallpaper is visible a frame is drawn every 1/[FPS] s, always, so the display
+     * Fixed frame rate (the user's choice, 10 by default): while the wallpaper is visible a frame is drawn every 1/fps s, always, so the display
      * sees one steady content rate (also announced with Surface.setFrameRate) instead of bursts and pauses.
      * Frames are paced with Choreographer, which lands them on vsync boundaries (10 fps = every 12th vsync at
      * 120 Hz). When the wallpaper becomes invisible (screen off) the callback is cancelled: nothing runs at all.
@@ -45,11 +46,17 @@ class EarthWallpaperService : WallpaperService() {
         private var lastFrameNanos = 0L
         private var targetNanos = 0L
         private val frameCallback = Choreographer.FrameCallback { nanos -> onFrame(nanos) }
+        private var fps = Prefs.DEFAULT_FPS
+        private val frameNanos get() = 1_000_000_000L / fps
+        private var surface: Surface? = null
+        private val prefs = Prefs.get(this@EarthWallpaperService)
+        private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> glHandler.post { applyPrefs() } }
         private val logTimings = BuildConfig.DEBUG
 
         override fun onCreate(holder: SurfaceHolder) {
             super.onCreate(holder)
             setTouchEventsEnabled(false)
+            prefs.registerOnSharedPreferenceChangeListener(prefsListener)
             glHandler.post { choreographer = Choreographer.getInstance() } // bound to the GL thread's looper
         }
 
@@ -86,6 +93,7 @@ class EarthWallpaperService : WallpaperService() {
 
         override fun onDestroy() {
             super.onDestroy()
+            prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
             glHandler.post {
                 destroyGl()
                 glThread.quitSafely()
@@ -113,10 +121,10 @@ class EarthWallpaperService : WallpaperService() {
 
             // Next frame one interval after this vsync. Posting a little early makes the callback fire on the very
             // vsync that is one interval away; if drawing took longer than an interval, resync instead of piling up.
-            targetNanos = if (targetNanos == 0L || System.nanoTime() > targetNanos + FRAME_NANOS) {
-                frameTimeNanos + FRAME_NANOS
+            targetNanos = if (targetNanos == 0L || System.nanoTime() > targetNanos + frameNanos) {
+                frameTimeNanos + frameNanos
             } else {
-                targetNanos + FRAME_NANOS
+                targetNanos + frameNanos
             }
             val delayMs = ((targetNanos - System.nanoTime()) / 1_000_000L - VSYNC_SLACK_MS).coerceAtLeast(0L)
             choreographer?.postFrameCallbackDelayed(frameCallback, delayMs)
@@ -190,8 +198,20 @@ class EarthWallpaperService : WallpaperService() {
             Log.i(TAG, "PROFILE done")
         }
 
+        /** Settings changed (or the first read): frame rate here, the picture in the renderer. */
+        private fun applyPrefs() {
+            val v = Prefs.read(prefs)
+            if (v.fps != fps) {
+                fps = v.fps
+                targetNanos = 0L
+                surface?.let(::announceFrameRate)
+            }
+            renderer?.applySettings(v)
+        }
+
         private fun createGl(surface: Surface) {
             try {
+                this.surface = surface
                 display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
                 EGL14.eglInitialize(display, IntArray(2), 0, IntArray(2), 1)
                 val extensions = EGL14.eglQueryString(display, EGL14.EGL_EXTENSIONS).orEmpty()
@@ -217,12 +237,16 @@ class EarthWallpaperService : WallpaperService() {
                 }
                 check(EGL14.eglMakeCurrent(display, eglSurface, eglSurface, eglContext)) { "eglMakeCurrent failed" }
                 Log.i(TAG, "EGL: ${if (config10 != null) 10 else 8}-bit, Display P3 passthrough: $p3")
+                fps = Prefs.read(prefs).fps
                 announceFrameRate(surface)
 
                 renderer = EarthRenderer(this@EarthWallpaperService, p3, if (config10 != null) 10 else 8)
+                    .also { it.applySettings(Prefs.read(prefs)) }
                     .also { it.init() }
-            } catch (e: Exception) {
+                Prefs.setError(this@EarthWallpaperService, null)
+            } catch (e: Throwable) { // the start page shows why the picture stays black
                 Log.e(TAG, "GL setup failed", e)
+                Prefs.setError(this@EarthWallpaperService, "${e.javaClass.simpleName}: ${e.message}".take(600))
                 destroyGl()
             }
         }
@@ -232,11 +256,11 @@ class EarthWallpaperService : WallpaperService() {
             try {
                 if (Build.VERSION.SDK_INT >= 31) {
                     surface.setFrameRate(
-                        FPS.toFloat(), Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE,
+                        fps.toFloat(), Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE,
                         Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS,
                     )
                 } else if (Build.VERSION.SDK_INT >= 30) {
-                    surface.setFrameRate(FPS.toFloat(), Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE)
+                    surface.setFrameRate(fps.toFloat(), Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE)
                 }
             } catch (e: RuntimeException) {
                 Log.w(TAG, "setFrameRate rejected", e)
@@ -280,8 +304,6 @@ class EarthWallpaperService : WallpaperService() {
 
     private companion object {
         const val TAG = "EarthWallpaper"
-        const val FPS = 10 // one of the panel's native rates (the panel itself can run at 10 Hz); every 12th vsync at 120 Hz
-        const val FRAME_NANOS = 1_000_000_000L / FPS
         const val VSYNC_SLACK_MS = 4L
         const val EGL_GL_COLORSPACE_KHR = 0x309D
         const val EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT = 0x3490

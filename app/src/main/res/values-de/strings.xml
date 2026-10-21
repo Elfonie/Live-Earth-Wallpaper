@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Earth Live</string>
+    <string name="wallpaper_description">Die Erde aus dem Orbit in Echtzeit: Tag und Nacht, Jahreszeiten, Sonne, Mond, Sterne und Polarlicht.</string>
+    <string name="tagline">Die Erde aus dem Orbit, in Echtzeit berechnet: die echte Tag-Nacht-Grenze, die Jahreszeiten, die Sonne, der Mond mit seiner Phase, Sterne und Polarlicht. Funktioniert offline und braucht keine Berechtigungen.</string>
+    <string name="hero_description">Die Erde mit Nachtseite, Stadtlichtern und Polarlicht</string>
+    <string name="footer">Version %1$s · MIT-Lizenz · Datenquellen unter Credits</string>
+
+    <string name="set_wallpaper">Als Live-Hintergrund festlegen</string>
+    <string name="settings">Einstellungen</string>
+    <string name="credits">Credits und Lizenzen</string>
+
+    <string name="status_checking">Gerät wird geprüft …</string>
+    <string name="status_ready">Dein Gerät kann Earth Live ausführen</string>
+    <string name="status_active">Earth Live ist dein Hintergrund</string>
+    <string name="status_gpu">Grafikchip: %1$s</string>
+    <string name="status_unsupported">Dieses Gerät wird nicht unterstützt</string>
+    <string name="status_error">Der letzte Start ist fehlgeschlagen</string>
+    <string name="status_error_body">Das Bild konnte nicht gezeichnet werden: %1$s\n\nÖffne den Hintergrund noch einmal; bleibt es so, melde es bitte mit diesem Text.</string>
+
+    <string name="settings_hint">Änderungen wirken sofort, wenn Earth Live dein Hintergrund ist.</string>
+    <string name="section_picture">Bild</string>
+    <string name="section_details">Was zu sehen ist</string>
+    <string name="section_performance">Leistung</string>
+    <string name="earth_size">Größe der Erde</string>
+    <string name="earth_size_hint">Wie viel der Bildschirmbreite die Erde ausfüllt.</string>
+    <string name="orbit">Umlaufzeit</string>
+    <string name="orbit_hint">Wie lange die Kamera für eine Runde um die Erde braucht.</string>
+    <string name="latitude">Breitengrad der Kamera</string>
+    <string name="latitude_hint">Der Breitengrad, auf dem die Kamera kreist. Nord zeigt das Nordlicht, Süd das Südlicht.</string>
+    <string name="minutes">%1$d Min.</string>
+    <string name="north">%1$d° N</string>
+    <string name="south">%1$d° S</string>
+    <string name="equator">Äquator</string>
+    <string name="clouds">Wolken</string>
+    <string name="clouds_hint">Die wandernde Wolkenschicht (schaltet auch Zirruswolken aus).</string>
+    <string name="cirrus">Zirruswolken</string>
+    <string name="cirrus_hint">Dünne hohe Wolken über der Hauptschicht.</string>
+    <string name="city_lights">Stadtlichter</string>
+    <string name="city_lights_hint">Die Lichter der Städte auf der Nachtseite.</string>
+    <string name="aurora">Polarlicht</string>
+    <string name="aurora_hint">Nord- und Südlicht rund um die Pole.</string>
+    <string name="airglow">Airglow und Nachtwolken</string>
+    <string name="airglow_hint">Das schwache grüne Leuchten am Nachtrand und leuchtende Nachtwolken nahe den Polen.</string>
+    <string name="lightning">Blitze</string>
+    <string name="lightning_hint">Blitze in Gewittern auf der Nachtseite.</string>
+    <string name="fps">Bildrate</string>
+    <string name="fps_hint">10 fps reichen für die langsame Bewegung und schonen den Akku am meisten. Höher ist flüssiger und kostet spürbar mehr Strom.</string>
+    <string name="reset">Auf Standard zurücksetzen</string>
+</resources>

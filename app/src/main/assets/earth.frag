@@ -33,11 +33,7 @@ uniform mat3 uSkyRot;      // Earth-fixed ray -> J2000 equatorial direction (inv
 uniform float uSolarEclipse; // 1 when the Moon is close enough to the Sun's direction to shade the Earth
 uniform float uLunarEclipse; // 1 when the Moon is close enough to the anti-Sun direction to enter the Earth's shadow
 uniform vec3 uEclipticPole;  // north pole of the ecliptic in the Earth-fixed frame (for the zodiacal light)
-#ifdef PROFILE
-uniform int uSkip;          // profiling only: bits that switch parts of the picture off (0 = everything on), see SKIP_*
-#else
-const int uSkip = 0;        // release builds: the compiler drops every switch
-#endif
+uniform int uSkip;          // bits that switch parts of the picture off (0 = everything on), see SKIP_*: the user's settings, and profiling
 uniform float uAuroraPhase; // 0..1 around every 2 minutes; the aurora only uses periodic functions of it, so it never jumps
 uniform float uCloudShift; // the cloud layer's eastward drift against the ground, in turns (0..1)
 uniform float uTime;       // seconds, wrapped; only drives the star flicker
@@ -106,7 +102,7 @@ const float R_MOON = 0.2725;  // Earth radii
 const float MOON_GAIN = 0.5;
 
 const int SKIP_STARS = 1, SKIP_MILKY = 2, SKIP_ATMO_BACK = 4, SKIP_ATMO_FRONT = 8, SKIP_AURORA = 16, SKIP_SUN_MOON = 32,
-          SKIP_CLOUD_TAPS = 64, SKIP_RELIEF = 128, SKIP_CLOUDS = 256, SKIP_LIGHTS = 512, SKIP_UPPER_AIR = 1024, SKIP_LIGHTNING = 2048;
+          SKIP_CLOUD_TAPS = 64, SKIP_RELIEF = 128, SKIP_CLOUDS = 256, SKIP_LIGHTS = 512, SKIP_UPPER_AIR = 1024, SKIP_LIGHTNING = 2048, SKIP_CIRRUS = 4096;
 
 const float OCEAN_ROUGHNESS = 0.45; // GGX alpha 0.2, a sea at about 7 m/s: a wide soft sheen instead of a hot spot
 // The cloud map is infrared: cold land (autumn Europe, Russia, snow) is as bright as cloud. Over land the regional
@@ -649,7 +645,7 @@ void main() {
         }
 
         // ---- cirrus: thin streaks high above the clouds, with a parallax of their own ----
-        if ((uSkip & SKIP_CLOUDS) == 0 && dist < R_CIRRUS) {
+        if ((uSkip & (SKIP_CLOUDS | SKIP_CIRRUS)) == 0 && dist < R_CIRRUS) {
             float high = textureGrad(uClouds, uvH, gH.dx * 3.0, gH.dy * 3.0).r;
             float thin = smoothstep(0.50, 0.92, high); // only the densest parts of the map: sparse cirrus, not a second cloud layer
             if (thin > 0.0) {

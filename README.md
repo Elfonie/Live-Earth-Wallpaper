@@ -32,6 +32,11 @@ Requirements: Android 8.0+ (API 26), OpenGL ES 3.0 and ASTC texture support (mos
 at 10 fps). Weaker GPUs may not hold 10 fps and will use more battery; there is no quality setting yet.
 The APK on the Releases page is a debug-signed build (it contains the profiling controls described in tools/README.md), so Android may warn about an unknown source.
 
+Open **Earth Live** from the app drawer: the start page checks that your GPU can run it (OpenGL ES 3.0, ASTC textures,
+8k textures), sets the wallpaper, and opens the **Settings** (Earth size, orbit time, camera latitude, frame rate, switches for
+clouds, cirrus, city lights, aurora, airglow and lightning; changes apply at once) and the **Credits**. If the picture ever fails
+to start, the start page shows the reason.
+
 ## Build (Android)
 
 ```

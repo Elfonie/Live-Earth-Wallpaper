@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="credits_html" translatable="false"><![CDATA[
+<b>Earth Live</b> · code and shaders: MIT license, © 2026 Elfonie.<br>
+The images and star data below keep the terms of their sources. They were resized, converted, compressed and in part combined.
+This app is free; it is <b>not endorsed by NASA, ESA, GEBCO, the IHO or the IOC</b>.<br><br>
+
+<b>Earth</b><br>
+Blue Marble: Next Generation with Topography and Bathymetry (2004), Reto Stöckli, NASA Earth Observatory / NASA Goddard Space Flight Center.<br>
+<a href="https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/">science.nasa.gov</a><br><br>
+
+<b>City lights</b><br>
+Night Lights 2012 map, NASA Earth Observatory image by Robert Simmon, using Suomi NPP VIIRS data provided courtesy of Chris Elvidge (NOAA National Geophysical Data Center).<br><br>
+
+<b>Relief and ocean mask</b><br>
+Derived from an image by Jesse Allen, NASA\'s Earth Observatory, using data from the General Bathymetric Chart of the Oceans (GEBCO), The GEBCO_08 Grid, <a href="https://www.gebco.net">www.gebco.net</a>, British Oceanographic Data Centre. Not for navigation.<br><br>
+
+<b>Moon</b><br>
+NASA\'s Scientific Visualization Studio, CGI Moon Kit (SVS 4720), based on LRO LROC WAC data, NASA/GSFC/Arizona State University.<br>
+<a href="https://svs.gsfc.nasa.gov/4720/">svs.gsfc.nasa.gov/4720</a><br><br>
+
+<b>Milky Way</b><br>
+NASA/Goddard Space Flight Center Scientific Visualization Studio, Deep Star Maps 2020 (SVS 4851). Gaia DR2: ESA/Gaia/DPAC; Hipparcos and Tycho-2 (ESA).<br>
+<a href="https://svs.gsfc.nasa.gov/4851/">svs.gsfc.nasa.gov/4851</a><br><br>
+
+<b>Clouds</b><br>
+Solar System Scope textures, based on NASA data, license
+<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.<br>
+<a href="https://www.solarsystemscope.com/textures/">solarsystemscope.com/textures</a><br><br>
+
+<b>Stars</b><br>
+AT-HYG database by David Nash (astronexus), license
+<a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>; based on The Hipparcos and Tycho Catalogues (ESA SP-1200), data from the European Space Agency (ESA) mission Gaia (Gaia DPAC), the Yale Bright Star Catalog (Hoffleit 1991) and the Gliese-Jahreiss catalog (1991).
+Changes: filtered to about 870,000 stars, positions computed for 2026, colours derived from the catalog colour index, packed into a binary table.
+<a href="https://codeberg.org/astronexus/athyg">codeberg.org/astronexus/athyg</a><br><br>
+
+<b>Methods</b><br>
+Atmospheric scattering after Bruneton and Neyret (2008) and Hillaire (2020); Sun and Moon positions after Jean Meeus, Astronomical Algorithms.<br><br>
+
+<b>Use</b><br>
+Gaia data are published by ESA under CC BY-NC 3.0 IGO and the GEBCO_08 data have non-commercial terms of their own, so this app is free, without ads, prices or donation links. No warranty.
+    ]]></string>
+</resources>

@@ -25,6 +25,10 @@ class EarthRenderer(
 
     /** Profiling only (debug builds): bits that switch parts of the picture off, see SKIP_* in earth.frag. */
     var skipMask = 0
+    private var featureMask = 0 // the same bits, from the user's switches
+    private var fill = OrbitCamera.FILL_X
+    private var latitudeDeg = OrbitCamera.LATITUDE_DEG
+    private var periodSeconds = OrbitCamera.PERIOD_SECONDS
     private var program = 0
     private var resolveProgram = 0
     private var activeProgram = 0
@@ -51,7 +55,7 @@ class EarthRenderer(
         val forcedOff = debuggable && java.io.File(context.filesDir, "no_hdr").exists() // for A/B comparisons over adb
         useHdr = !forcedOff && ("GL_EXT_color_buffer_float" in extensions || "GL_EXT_color_buffer_half_float" in extensions)
         useSprites = useHdr && !(debuggable && java.io.File(context.filesDir, "no_sprites").exists())
-        val defines = (if (debuggable) "#define PROFILE\n" else "") + (if (useHdr) "#define HDR_OUT\n" else "") + (if (useSprites) "#define STAR_SPRITES\n" else "")
+        val defines = (if (useHdr) "#define HDR_OUT\n" else "") + (if (useSprites) "#define STAR_SPRITES\n" else "")
         program = buildProgram(readAsset("earth.vert"), readShader("earth.frag").replaceFirst(VERSION_LINE, "#version 300 es\n$defines"))
         if (useHdr) resolveProgram = buildProgram(readAsset("earth.vert"), readAsset("resolve.frag"))
         if (useSprites) starProgram = buildProgram(readShader("star.vert"), readShader("star.frag"))
@@ -95,9 +99,25 @@ class EarthRenderer(
         sprites?.invalidate()
         // Fixed vertical field of view; the distance then follows from the aspect ratio so that the Earth fills
         // FILL_X of the width. It is computed once per surface size and stays constant: no zoom while orbiting.
+        buildCamera()
+    }
+
+    /** The user's settings; may be called at any time on the GL thread. */
+    fun applySettings(v: Prefs.Values) {
+        fill = v.fill
+        latitudeDeg = v.latitudeDeg
+        periodSeconds = v.periodSeconds
+        featureMask = v.skipMask
+        if (viewWidth > 1) {
+            buildCamera()
+            sprites?.invalidate() // the star list belongs to the old camera position
+        }
+    }
+
+    private fun buildCamera() {
         val tanY = OrbitCamera.tanHalfY()
-        val tanX = tanY * width / height
-        camera = OrbitCamera(OrbitCamera.distanceForFill(tanX))
+        val tanX = tanY * viewWidth / viewHeight
+        camera = OrbitCamera(OrbitCamera.distanceForFill(tanX, fill), latitudeDeg, periodSeconds)
         tanHalfX = tanX.toFloat()
         tanHalfY = tanY.toFloat()
     }
@@ -119,7 +139,7 @@ class EarthRenderer(
         uniform3("uCamFwd", pose.forward)
         GLES30.glUniformMatrix3fv(loc("uSkyRot"), 1, false, SkyFrame.toUniform(SkyFrame.earthFixedToSky(jd, pose)), 0)
         GLES30.glUniform1f(loc("uCloudShift"), OrbitCamera.cloudShift(nowMs))
-        GLES30.glUniform1i(loc("uSkip"), skipMask)
+        GLES30.glUniform1i(loc("uSkip"), skipMask or featureMask)
         GLES30.glUniform1f(loc("uAuroraPhase"), ((nowMs / 1000.0) % AURORA_PERIOD_SECONDS / AURORA_PERIOD_SECONDS).toFloat())
         GLES30.glUniform1f(loc("uTime"), ((nowMs / 1000.0) % 3600.0).toFloat())
         GLES30.glUniform1f(loc("uPixelAngle"), 2f * tanHalfX / viewWidth)

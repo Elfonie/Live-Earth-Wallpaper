@@ -1,4 +1,50 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Earth Live</string>
+    <string name="wallpaper_description">The Earth from orbit in real time: day and night, seasons, Sun, Moon, stars and aurora.</string>
+    <string name="tagline">The Earth from orbit, drawn in real time: the real day and night line, the seasons, the Sun, the Moon with its phase, stars and the aurora. Works offline and needs no permissions.</string>
+    <string name="hero_description">The Earth with its night side, city lights and an aurora</string>
+    <string name="footer">Version %1$s · MIT license · data credits under Credits</string>
+
+    <string name="set_wallpaper">Set as live wallpaper</string>
+    <string name="settings">Settings</string>
+    <string name="credits">Credits and licenses</string>
+
+    <string name="status_checking">Checking your device …</string>
+    <string name="status_ready">Your device can run Earth Live</string>
+    <string name="status_active">Earth Live is your wallpaper</string>
+    <string name="status_gpu">Graphics chip: %1$s</string>
+    <string name="status_unsupported">This device is not supported</string>
+    <string name="status_error">The last start failed</string>
+    <string name="status_error_body">The picture could not be drawn: %1$s\n\nOpen the wallpaper again; if this stays, please report it with this text.</string>
+
+    <string name="settings_hint">Changes apply at once when Earth Live is your wallpaper.</string>
+    <string name="section_picture">Picture</string>
+    <string name="section_details">What is shown</string>
+    <string name="section_performance">Performance</string>
+    <string name="earth_size">Earth size</string>
+    <string name="earth_size_hint">How much of the screen width the Earth fills.</string>
+    <string name="orbit">Orbit time</string>
+    <string name="orbit_hint">How long the camera needs for one lap around the Earth.</string>
+    <string name="minutes">%1$d min</string>
+    <string name="latitude">Camera latitude</string>
+    <string name="latitude_hint">The latitude the camera circles at. North shows the northern aurora, south the southern one.</string>
+    <string name="north">%1$d° N</string>
+    <string name="south">%1$d° S</string>
+    <string name="equator">Equator</string>
+    <string name="clouds">Clouds</string>
+    <string name="clouds_hint">The moving cloud layer (also switches off cirrus).</string>
+    <string name="cirrus">Cirrus clouds</string>
+    <string name="cirrus_hint">Thin high clouds above the main layer.</string>
+    <string name="city_lights">City lights</string>
+    <string name="city_lights_hint">The lights of cities on the night side.</string>
+    <string name="aurora">Aurora</string>
+    <string name="aurora_hint">Northern and southern lights around the poles.</string>
+    <string name="airglow">Airglow and night clouds</string>
+    <string name="airglow_hint">The faint green glow along the night limb and glowing night clouds near the poles.</string>
+    <string name="lightning">Lightning</string>
+    <string name="lightning_hint">Flashes inside thunderstorms on the night side.</string>
+    <string name="fps">Frame rate</string>
+    <string name="fps_hint">10 fps is smooth enough for the slow motion and easiest on the battery. Higher is smoother and costs noticeably more power.</string>
+    <string name="reset">Reset to defaults</string>
 </resources>
