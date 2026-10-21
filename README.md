@@ -33,8 +33,10 @@ Download the APK from the [Releases](../../releases) page, install it, open **Ea
 - Requirements: Android 8.0 or newer (API 26), OpenGL ES 3.0, ASTC texture support, a GPU with 8192 px textures.
   The start page checks this and tells you if your device is not supported.
 - The APK is about 154 MB (the textures are most of it).
-- The APK on the Releases page is a debug-signed build (it also contains the profiling controls described in
-  [tools/README.md](tools/README.md)), so Android may warn about an unknown source.
+- The APK on the Releases page is a release build signed with the author's own key (certificate SHA-256
+  `13:C8:85:B7:08:49:59:85:39:62:8F:5F:E7:CA:6C:73:B5:75:6B:DF:EB:1F:7C:4B:A3:C9:E5:20:82:80:D9:1C`, check it with
+  `apksigner verify --print-certs`). Android still asks you to allow installing apps from this source, as for every APK
+  that does not come from a store.
 - **It has only been tested on a Google Pixel 10 Pro.** Weaker GPUs may not hold the frame rate; see [Performance](#performance).
 
 ## Using the app
@@ -116,7 +118,7 @@ busy about 5 % of the time. This was measured in a browser, not inside Wallpaper
 
 ### How to measure it yourself
 
-Debug builds read control files from the app's files directory (see [tools/README.md](tools/README.md)). Run
+Debug builds (not the release APK) read control files from the app's files directory (see [tools/README.md](tools/README.md)). Run
 
 ```
 adb shell "run-as com.example.earthlive sh -c 'echo 1 > files/profile.flag'"
@@ -141,6 +143,7 @@ yourself run `python tools/make_web.py` (needs the intermediate textures from th
 
 ```
 ./gradlew testDebugUnitTest assembleDebug     # JDK 17, Android SDK 35
+./gradlew assembleRelease                     # unsigned unless keystore.properties exists (see app/build.gradle.kts)
 ```
 
 The converted textures are in the repo (`app/src/main/assets`, about 150 MB), so the build does not need the raw sources.
