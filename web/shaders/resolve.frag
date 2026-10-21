@@ -6,6 +6,7 @@ precision highp sampler2D;
 out vec4 outColor;
 
 uniform sampler2D uHdr;
+uniform vec2 uScreen; // the screen's size in pixels: the buffer may be smaller (render scale), then it is stretched
 uniform float uP3;     // 1.0: encode for Display P3, 0.0: sRGB
 uniform float uDither; // 1 / (2^bits - 1)
 
@@ -23,7 +24,7 @@ vec3 oetfSrgb(vec3 c) {
 }
 
 void main() {
-    vec3 col = aces(max(texelFetch(uHdr, ivec2(gl_FragCoord.xy), 0).rgb, 0.0));
+    vec3 col = aces(max(texture(uHdr, gl_FragCoord.xy / uScreen).rgb, 0.0));
     if (uP3 > 0.5) col = clamp(SRGB_TO_P3 * col, 0.0, 1.0);
     col = oetfSrgb(col);
     float noise = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));

@@ -28,14 +28,14 @@ class MainActivity : Activity() {
 
         val hero = ImageView(this).apply {
             setImageResource(R.drawable.hero)
-            scaleType = ImageView.ScaleType.CENTER_CROP
+            adjustViewBounds = true // the picture keeps its 4:3 shape at the full width
             outlineProvider = object : ViewOutlineProvider() {
                 override fun getOutline(view: View, outline: Outline) = outline.setRoundRect(0, 0, view.width, view.height, Ui.dp(this@MainActivity, 28).toFloat())
             }
             clipToOutline = true
             contentDescription = getString(R.string.hero_description)
         }
-        column.addView(hero, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Ui.dp(this, 300)))
+        column.addView(hero, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         column.addView(Ui.title(this, getString(R.string.app_name)), Ui.lp(this, 22))
         column.addView(Ui.body(this, getString(R.string.tagline)), Ui.lp(this, 8))
 

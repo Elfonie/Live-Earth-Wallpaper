@@ -29,6 +29,11 @@ class EarthRenderer(
     private var fill = OrbitCamera.FILL_X
     private var latitudeDeg = OrbitCamera.LATITUDE_DEG
     private var periodSeconds = OrbitCamera.PERIOD_SECONDS
+    private var renderScale = 1.0 // the picture is drawn at this fraction of the screen's size and stretched
+    private var starGain = 1f
+    private var cloudLapSeconds = OrbitCamera.CLOUD_DRIFT_SECONDS.toInt()
+    private var renderW = 1
+    private var renderH = 1
     private var program = 0
     private var resolveProgram = 0
     private var activeProgram = 0
@@ -92,10 +97,9 @@ class EarthRenderer(
     }
 
     fun resize(width: Int, height: Int) {
-        GLES30.glViewport(0, 0, width, height)
         viewWidth = width
         viewHeight = height
-        if (useHdr) createHdrTarget(width, height)
+        updateTarget()
         sprites?.invalidate()
         // Fixed vertical field of view; the distance then follows from the aspect ratio so that the Earth fills
         // FILL_X of the width. It is computed once per surface size and stays constant: no zoom while orbiting.
@@ -108,10 +112,23 @@ class EarthRenderer(
         latitudeDeg = v.latitudeDeg
         periodSeconds = v.periodSeconds
         featureMask = v.skipMask
+        starGain = v.starGain
+        cloudLapSeconds = v.cloudLapSeconds
+        val scaleChanged = v.renderScale != renderScale
+        renderScale = v.renderScale
         if (viewWidth > 1) {
+            if (scaleChanged) updateTarget()
             buildCamera()
             sprites?.invalidate() // the star list belongs to the old camera position
         }
+    }
+
+    /** Size of the offscreen picture: the screen's size times the user's render scale (only the half-float path can scale). */
+    private fun updateTarget() {
+        val scale = if (useHdr) renderScale else 1.0
+        renderW = (viewWidth * scale).toInt().coerceAtLeast(2)
+        renderH = (viewHeight * scale).toInt().coerceAtLeast(2)
+        if (useHdr) createHdrTarget(renderW, renderH, smooth = scale < 1.0)
     }
 
     private fun buildCamera() {
@@ -132,17 +149,19 @@ class EarthRenderer(
         val pose = orbit.pose(jd)
 
         if (useHdr) GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, hdrFramebuffer)
+        GLES30.glViewport(0, 0, renderW, renderH)
         activate(program)
         uniform3("uCamPos", pose.position)
         uniform3("uCamRight", pose.right)
         uniform3("uCamUp", pose.up)
         uniform3("uCamFwd", pose.forward)
         GLES30.glUniformMatrix3fv(loc("uSkyRot"), 1, false, SkyFrame.toUniform(SkyFrame.earthFixedToSky(jd, pose)), 0)
-        GLES30.glUniform1f(loc("uCloudShift"), OrbitCamera.cloudShift(nowMs))
+        GLES30.glUniform1f(loc("uCloudShift"), if (cloudLapSeconds == 0) 0f else ((nowMs / 1000.0) % cloudLapSeconds / cloudLapSeconds).toFloat())
+        GLES30.glUniform1f(loc("uStarGain"), starGain)
         GLES30.glUniform1i(loc("uSkip"), skipMask or featureMask)
         GLES30.glUniform1f(loc("uAuroraPhase"), ((nowMs / 1000.0) % AURORA_PERIOD_SECONDS / AURORA_PERIOD_SECONDS).toFloat())
         GLES30.glUniform1f(loc("uTime"), ((nowMs / 1000.0) % 3600.0).toFloat())
-        GLES30.glUniform1f(loc("uPixelAngle"), 2f * tanHalfX / viewWidth)
+        GLES30.glUniform1f(loc("uPixelAngle"), 2f * tanHalfX / renderW)
         GLES30.glUniform2f(loc("uTanHalf"), tanHalfX, tanHalfY)
         GLES30.glUniform3f(loc("uSunDir"), sun.x.toFloat(), sun.y.toFloat(), sun.z.toFloat())
         GLES30.glUniform3f(loc("uMoonDir"), moon.x.toFloat(), moon.y.toFloat(), moon.z.toFloat())
@@ -159,8 +178,10 @@ class EarthRenderer(
         sprites?.let { if (skipMask and 1 == 0) drawStars(it, nowMs, jd, pose) }
         if (useHdr) {
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
+            GLES30.glViewport(0, 0, viewWidth, viewHeight)
             activate(resolveProgram)
             GLES30.glUniform1i(loc("uHdr"), HDR_UNIT)
+            GLES30.glUniform2f(loc("uScreen"), viewWidth.toFloat(), viewHeight.toFloat())
             GLES30.glUniform1f(loc("uP3"), if (outputP3) 1f else 0f)
             GLES30.glUniform1f(loc("uDither"), 1f / ((1 shl outputBits) - 1))
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
@@ -183,8 +204,10 @@ class EarthRenderer(
         uniform3("uCamUp", pose.up)
         uniform3("uCamFwd", pose.forward)
         GLES30.glUniform2f(loc("uTanHalf"), tanHalfX, tanHalfY)
-        GLES30.glUniform2f(loc("uViewport"), viewWidth.toFloat(), viewHeight.toFloat())
-        GLES30.glUniform1f(loc("uPixelAngle"), 2f * tanHalfX / viewWidth)
+        GLES30.glUniform2f(loc("uViewport"), renderW.toFloat(), renderH.toFloat())
+        GLES30.glUniform1f(loc("uPixelAngle"), 2f * tanHalfX / renderW)
+        GLES30.glUniform1f(loc("uStarGain"), starGain)
+        GLES30.glUniform1f(loc("uRenderScale"), (renderW.toFloat() / viewWidth))
         GLES30.glUniform1f(loc("uTime"), ((nowMs / 1000.0) % 3600.0).toFloat())
         GLES30.glUniform1i(loc("uStarColors"), 7)
         GLES30.glUniform1i(loc("uTransmittance"), ATMOSPHERE_UNIT)
@@ -213,7 +236,7 @@ class EarthRenderer(
     }
 
     /** The scene's linear light needs more than 8 bits and more than 1.0: a half-float buffer of the screen's size. */
-    private fun createHdrTarget(width: Int, height: Int) {
+    private fun createHdrTarget(width: Int, height: Int, smooth: Boolean) {
         if (hdrTexture != 0) {
             GLES30.glDeleteTextures(1, intArrayOf(hdrTexture), 0)
             GLES30.glDeleteFramebuffers(1, intArrayOf(hdrFramebuffer), 0)
@@ -225,8 +248,9 @@ class EarthRenderer(
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, hdrTexture)
         // 4 bytes per pixel instead of 8: R11G11B10F keeps about 1.5 % relative precision at any brightness
         GLES30.glTexImage2D(GLES30.GL_TEXTURE_2D, 0, GLES30.GL_R11F_G11F_B10F, width, height, 0, GLES30.GL_RGB, GLES30.GL_UNSIGNED_INT_10F_11F_11F_REV, null)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_NEAREST)
-        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_NEAREST)
+        val filter = if (smooth) GLES30.GL_LINEAR else GLES30.GL_NEAREST // stretched: bilinear; same size: exact texels
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, filter)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, filter)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glGenFramebuffers(1, ids, 0)

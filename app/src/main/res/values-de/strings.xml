@@ -45,6 +45,18 @@
     <string name="lightning">Blitze</string>
     <string name="lightning_hint">Blitze in Gewittern auf der Nachtseite.</string>
     <string name="fps">Bildrate</string>
-    <string name="fps_hint">10 fps reichen für die langsame Bewegung und schonen den Akku am meisten. Höher ist flüssiger und kostet spürbar mehr Strom.</string>
+    <string name="fps_hint">5 fps ist am sparsamsten (die Bewegung ist langsam, aber man sieht Schritte), 10 fps reicht für die meisten. Höher ist flüssiger und kostet spürbar mehr Strom.</string>
+    <string name="stars">Helligkeit der Sterne</string>
+    <string name="stars_hint">Wie hell die Sterne sind; sie werden immer als scharfe Punkte gezeichnet.</string>
+    <string name="cloud_speed">Wolkenbewegung</string>
+    <string name="cloud_speed_hint">Wie schnell die Wolkenschicht um die Erde wandert.</string>
+    <string name="cloud_still">Stehend</string>
+    <string name="cloud_slow">Langsam</string>
+    <string name="cloud_normal">Normal</string>
+    <string name="cloud_fast">Schnell</string>
+    <string name="render_scale">Render-Auflösung</string>
+    <string name="render_scale_hint">Das Bild wird mit diesem Anteil der Bildschirmauflösung berechnet und gedehnt. Niedriger schont den Akku und ist etwas weicher.</string>
+    <string name="sharp_clouds">Scharfe Wolkenkanten</string>
+    <string name="sharp_clouds_hint">Glättet die Wolkenkanten (Kantenglättung). Ausgeschaltet spart etwas Strom.</string>
     <string name="reset">Auf Standard zurücksetzen</string>
 </resources>

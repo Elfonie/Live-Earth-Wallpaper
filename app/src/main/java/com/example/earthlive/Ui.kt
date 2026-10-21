@@ -28,7 +28,7 @@ object Ui {
         val scroll = ScrollView(context).apply {
             setBackgroundColor(color(context, R.color.bg))
             isFillViewport = true
-            clipToPadding = false
+            clipToPadding = true // content must not show behind the status bar
             setOnApplyWindowInsetsListener { v, insets ->
                 v.setPadding(0, insets.systemWindowInsetTop, 0, insets.systemWindowInsetBottom)
                 insets

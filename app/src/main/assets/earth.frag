@@ -34,6 +34,7 @@ uniform float uSolarEclipse; // 1 when the Moon is close enough to the Sun's dir
 uniform float uLunarEclipse; // 1 when the Moon is close enough to the anti-Sun direction to enter the Earth's shadow
 uniform vec3 uEclipticPole;  // north pole of the ecliptic in the Earth-fixed frame (for the zodiacal light)
 uniform int uSkip;          // bits that switch parts of the picture off (0 = everything on), see SKIP_*: the user's settings, and profiling
+uniform float uStarGain;   // the user's star brightness, 1 = as drawn by default
 uniform float uAuroraPhase; // 0..1 around every 2 minutes; the aurora only uses periodic functions of it, so it never jumps
 uniform float uCloudShift; // the cloud layer's eastward drift against the ground, in turns (0..1)
 uniform float uTime;       // seconds, wrapped; only drives the star flicker
@@ -679,7 +680,7 @@ void main() {
 #ifdef STAR_SPRITES
         vec3 stars = vec3(0.0); // drawn as sprites into the same buffer after this pass
 #else
-        vec3 stars = (uSkip & SKIP_STARS) == 0 ? starfield(dirCel, limb) : vec3(0.0);
+        vec3 stars = (uSkip & SKIP_STARS) == 0 ? starfield(dirCel, limb) * uStarGain : vec3(0.0);
 #endif
         vec3 sun = (uSkip & SKIP_SUN_MOON) == 0 ? sunBody(rd) : vec3(0.0);
         sky = (mix(milky + stars, moon.rgb, moon.a) + sun * (1.0 - moon.a)) * airT;

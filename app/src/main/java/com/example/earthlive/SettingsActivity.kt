@@ -8,7 +8,6 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.Switch
-import android.widget.TextView
 import kotlin.math.roundToInt
 
 /** Settings; every change is written at once and a running wallpaper picks it up at once (same process, see EarthWallpaperService). */
@@ -32,11 +31,13 @@ class SettingsActivity : Activity() {
 
         column.addView(Ui.sectionLabel(this, getString(R.string.section_picture)))
         val picture = Ui.card(this)
-        picture.addView(slider(R.string.earth_size, R.string.earth_size_hint, 70, 100, prefs.getInt(Prefs.EARTH_SIZE, Prefs.DEFAULT_SIZE).coerceIn(70, 100), { "$it %" }) { prefs.edit().putInt(Prefs.EARTH_SIZE, it).apply() })
+        picture.addView(slider(R.string.earth_size, R.string.earth_size_hint, 70, 100, 1, prefs.getInt(Prefs.EARTH_SIZE, Prefs.DEFAULT_SIZE), { "$it %" }) { prefs.edit().putInt(Prefs.EARTH_SIZE, it).apply() })
         picture.addView(Ui.divider(this))
-        picture.addView(slider(R.string.orbit, R.string.orbit_hint, 6, 60, prefs.getInt(Prefs.ORBIT_MINUTES, Prefs.DEFAULT_ORBIT).coerceIn(6, 60), { getString(R.string.minutes, it) }) { prefs.edit().putInt(Prefs.ORBIT_MINUTES, it).apply() })
+        picture.addView(slider(R.string.orbit, R.string.orbit_hint, 6, 60, 1, prefs.getInt(Prefs.ORBIT_MINUTES, Prefs.DEFAULT_ORBIT), { getString(R.string.minutes, it) }) { prefs.edit().putInt(Prefs.ORBIT_MINUTES, it).apply() })
         picture.addView(Ui.divider(this))
-        picture.addView(slider(R.string.latitude, R.string.latitude_hint, -60, 60, prefs.getFloat(Prefs.LATITUDE, Prefs.DEFAULT_LATITUDE).roundToInt().coerceIn(-60, 60), { latitudeText(it) }) { prefs.edit().putFloat(Prefs.LATITUDE, it.toFloat()).apply() })
+        picture.addView(slider(R.string.latitude, R.string.latitude_hint, -60, 60, 1, prefs.getFloat(Prefs.LATITUDE, Prefs.DEFAULT_LATITUDE).roundToInt(), { latitudeText(it) }) { prefs.edit().putFloat(Prefs.LATITUDE, it.toFloat()).apply() })
+        picture.addView(Ui.divider(this))
+        picture.addView(slider(R.string.stars, R.string.stars_hint, 25, 150, 5, prefs.getInt(Prefs.STAR_BRIGHTNESS, Prefs.DEFAULT_STARS), { "$it %" }) { prefs.edit().putInt(Prefs.STAR_BRIGHTNESS, it).apply() })
         column.addView(picture)
 
         column.addView(Ui.sectionLabel(this, getString(R.string.section_details)))
@@ -49,17 +50,32 @@ class SettingsActivity : Activity() {
             Triple("airglow", R.string.airglow, R.string.airglow_hint),
             Triple("lightning", R.string.lightning, R.string.lightning_hint),
         )
-        rows.forEachIndexed { i, (key, title, hint) ->
-            if (i > 0) details.addView(Ui.divider(this))
+        rows.forEach { (key, title, hint) ->
             details.addView(toggle(key, title, hint))
+            details.addView(Ui.divider(this))
         }
+        details.addView(Ui.text(this, getString(R.string.cloud_speed), 16f, R.color.text, bold = true))
+        details.addView(Ui.body(this, getString(R.string.cloud_speed_hint)), Ui.lp(this, 4))
+        details.addView(
+            choice(listOf(R.string.cloud_still, R.string.cloud_slow, R.string.cloud_normal, R.string.cloud_fast).map(::getString), { prefs.getInt(Prefs.CLOUD_SPEED, Prefs.DEFAULT_CLOUD_SPEED) }) {
+                prefs.edit().putInt(Prefs.CLOUD_SPEED, it).apply()
+            },
+            Ui.lp(this, 14),
+        )
         column.addView(details)
 
         column.addView(Ui.sectionLabel(this, getString(R.string.section_performance)))
         val performance = Ui.card(this)
         performance.addView(Ui.text(this, getString(R.string.fps), 16f, R.color.text, bold = true))
         performance.addView(Ui.body(this, getString(R.string.fps_hint)), Ui.lp(this, 4))
-        performance.addView(fpsChoice(), Ui.lp(this, 14))
+        performance.addView(
+            choice(Prefs.FPS_CHOICES.map { "$it fps" }, { Prefs.FPS_CHOICES.indexOf(Prefs.read(prefs).fps) }) { prefs.edit().putInt(Prefs.FPS, Prefs.FPS_CHOICES[it]).apply() },
+            Ui.lp(this, 14),
+        )
+        performance.addView(Ui.divider(this))
+        performance.addView(slider(R.string.render_scale, R.string.render_scale_hint, 50, 100, 5, prefs.getInt(Prefs.RENDER_SCALE, Prefs.DEFAULT_RENDER_SCALE), { "$it %" }) { prefs.edit().putInt(Prefs.RENDER_SCALE, it).apply() })
+        performance.addView(Ui.divider(this))
+        performance.addView(toggle("sharp_clouds", R.string.sharp_clouds, R.string.sharp_clouds_hint))
         column.addView(performance)
 
         column.addView(Ui.button(this, getString(R.string.reset), primary = false) {
@@ -74,21 +90,23 @@ class SettingsActivity : Activity() {
         else -> getString(R.string.equator)
     }
 
-    private fun slider(title: Int, hint: Int, min: Int, max: Int, value: Int, format: (Int) -> String, save: (Int) -> Unit): View {
+    /** A title, a hint and a slider from [min] to [max] in steps of [step]; the saved value is snapped to the nearest step. */
+    private fun slider(title: Int, hint: Int, min: Int, max: Int, step: Int, value: Int, format: (Int) -> String, save: (Int) -> Unit): View {
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val head = LinearLayout(this)
         head.addView(Ui.text(this, getString(title), 16f, R.color.text, bold = true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        val valueText = Ui.text(this, format(value), 16f, R.color.accent, bold = true)
+        val shown = value.coerceIn(min, max)
+        val valueText = Ui.text(this, format(shown), 16f, R.color.accent, bold = true)
         head.addView(valueText)
         box.addView(head)
         box.addView(Ui.body(this, getString(hint)), Ui.lp(this, 4))
         val bar = SeekBar(this).apply {
-            this.max = max - min
-            progress = value - min
+            this.max = (max - min) / step
+            progress = ((shown - min).toFloat() / step).roundToInt()
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
-                    valueText.text = format(progress + min)
-                    if (fromUser) save(progress + min)
+                    valueText.text = format(min + progress * step)
+                    if (fromUser) save(min + progress * step)
                 }
                 override fun onStartTrackingTouch(seekBar: SeekBar) {}
                 override fun onStopTrackingTouch(seekBar: SeekBar) {}
@@ -111,28 +129,28 @@ class SettingsActivity : Activity() {
         return row
     }
 
-    private fun fpsChoice(): View {
+    /** A row of equal buttons, one of them selected. */
+    private fun choice(labels: List<String>, selected: () -> Int, onSelect: (Int) -> Unit): View {
         val row = LinearLayout(this)
-        val buttons = ArrayList<TextView>()
+        val buttons = ArrayList<android.widget.TextView>()
         fun paint() {
-            val selected = Prefs.read(prefs).fps
             buttons.forEachIndexed { i, b ->
-                val on = Prefs.FPS_CHOICES[i] == selected
+                val on = i == selected()
                 b.background = Ui.rounded(this, getColor(if (on) R.color.accent else R.color.card), 14, getColor(R.color.card_stroke))
                 b.setTextColor(getColor(if (on) R.color.on_accent else R.color.text))
             }
         }
-        Prefs.FPS_CHOICES.forEach { fps ->
-            val b = Ui.text(this, "$fps fps", 15f, R.color.text, bold = true).apply {
+        labels.forEachIndexed { i, label ->
+            val b = Ui.text(this, label, 14f, R.color.text, bold = true).apply {
                 gravity = Gravity.CENTER
                 minHeight = Ui.dp(this@SettingsActivity, 48)
                 setOnClickListener {
-                    prefs.edit().putInt(Prefs.FPS, fps).apply()
+                    onSelect(i)
                     paint()
                 }
             }
             buttons += b
-            row.addView(b, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { if (fps != Prefs.FPS_CHOICES.last()) marginEnd = Ui.dp(this@SettingsActivity, 10) })
+            row.addView(b, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { if (i < labels.lastIndex) marginEnd = Ui.dp(this@SettingsActivity, 8) })
         }
         paint()
         return row

@@ -208,6 +208,7 @@
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.useProgram(progResolve);
+    gl.uniform2f(loc(progResolve, 'uScreen'), width, height);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
@@ -240,6 +241,7 @@
     const samplers = { uDay: 0, uNight: 1, uTopo: 2, uClouds: 3, uSkyCells: 4, uSkyStars: 5, uMilky: 6, uStarColors: 7, uMoon: 8, uTransmittance: 10, uScatR: 11, uScatM: 12, uScatMS: 13 };
     for (const n in samplers) gl.uniform1i(loc(progScene, n), samplers[n]);
     gl.uniform1f(loc(progScene, 'uDither'), 1 / 255);
+    gl.uniform1f(loc(progScene, 'uStarGain'), 1);
     gl.useProgram(progResolve);
     gl.uniform1i(loc(progResolve, 'uHdr'), UNIT.hdr);
     gl.uniform1f(loc(progResolve, 'uP3'), 0);
