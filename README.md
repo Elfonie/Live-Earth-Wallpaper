@@ -2,7 +2,9 @@
 
 A live wallpaper for Android that shows the Earth as seen from orbit, rendered in real time from the real UTC clock:
 the day/night line, the seasons, the Sun, the Moon with its phase (and eclipses), the stars and the Milky Way behind it.
-It works offline and asks for no permissions. A PC version (Wallpaper Engine, or any WebGL2 browser) uses the same shader.
+It works offline and asks for no permissions. A PC version for Wallpaper Engine uses the same shader.
+
+**Get it:** [Android APK](../../releases) · [Steam Workshop (Wallpaper Engine)](https://steamcommunity.com/sharedfiles/filedetails/?id=3823825069) · free and open source (MIT)
 
 | Phone, day | Phone, night with aurora | PC (16:9) |
 |---|---|---|
@@ -142,12 +144,19 @@ measurement over hours. Please open an issue with your device and frame times if
 
 ## PC version (Wallpaper Engine)
 
-Download `earth-live-pc.zip` from the Releases page and extract it to
-`Wallpaper Engine\projects\myprojects\earth-live-pc` (so that `project.json` lies directly in that folder), then pick it
-under "Installed". Every setting of the Android app is a Wallpaper Engine property too (Earth size, orbit time and direction,
-camera latitude, star brightness, cloud speed and direction, switches for each effect, frame rate (30 by default), render
-resolution, sharp cloud edges, smoothing of the Sun and Moon). It also runs in any WebGL2
-browser (`python tools/web_server.py`, then open http://127.0.0.1:8791). It has only been tried briefly in Wallpaper Engine (it runs and shows the picture), not for hours; its performance was measured in a browser. To rebuild `web/assets`
+**Easiest: subscribe on the [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3823825069).**
+
+Or by hand: download `earth-live-pc.zip` from the [Releases](../../releases) page and extract it to
+`Wallpaper Engine\projects\myprojects\earth-live-pc` (so that `project.json` lies directly in that folder), then pick it under
+"Installed".
+
+Every setting of the Android app is a Wallpaper Engine property too: Earth size, orbit time and direction, camera latitude,
+star brightness, cloud speed and direction, a switch for every effect, frame rate (30 by default), render resolution, sharp
+cloud edges and smoothing of the Sun and Moon. The picture adapts to the screen: 1080p to 4K, ultrawide, and screens that are
+taller than wide.
+
+It also runs in any WebGL2 browser (`python tools/web_server.py`, then open http://127.0.0.1:8791). It has been tried on one
+PC (Intel Arc B580) and not for hours; its performance numbers above were measured in a browser. To rebuild `web/assets`
 yourself run `python tools/make_web.py` (needs the intermediate textures from the tools below).
 
 ## Build
@@ -171,7 +180,8 @@ desktop preview (`tools/preview.py`) and the debug and profiling controls. The r
 
 ## Known limitations
 
-- Tested on one phone (Pixel 10 Pro) and one PC. Other GPUs, drivers and Android versions are untested.
+- Tested on one phone (Pixel 10 Pro) and one PC (Intel Arc B580). Other GPUs, drivers, Android versions and Wallpaper Engine
+  setups are untested; please open an issue with your device and what you see.
 - No automatic quality levels and no battery saver mode yet; use the frame rate and render resolution settings.
 - The Sun and Moon cross the picture faster than the Earth turns (they are fixed in space while the camera circles), which can
   look jerky at 5-10 fps; the smoothing option and a longer orbit time reduce this.
