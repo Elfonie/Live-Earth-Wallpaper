@@ -61,9 +61,9 @@
 
   // Orbit camera (OrbitCamera.kt)
   const FOV_Y_DEG = 30, LATITUDE_DEG = 21.4, PERIOD_S = 24 * 60;
-  function orbitPose(jd, dist) {
-    const u = ((jd - J2000) * 86400 % PERIOD_S) / PERIOD_S * 2 * Math.PI;
-    const lat = LATITUDE_DEG * rad;
+  function orbitPose(jd, dist, latitudeDeg = LATITUDE_DEG, periodS = PERIOD_S, direction = 1) {
+    const u = direction * ((jd - J2000) * 86400 % periodS) / periodS * 2 * Math.PI;
+    const lat = latitudeDeg * rad;
     const inertial = [dist * Math.cos(lat) * Math.cos(u), -dist * Math.cos(lat) * Math.sin(u), dist * Math.sin(lat)];
     const gg = gmst(jd) * rad;
     const c = Math.cos(gg), s = Math.sin(gg);

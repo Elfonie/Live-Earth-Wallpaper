@@ -136,9 +136,10 @@ measurement over hours. Please open an issue with your device and frame times if
 
 Download `earth-live-pc.zip` from the Releases page and extract it to
 `Wallpaper Engine\projects\myprojects\earth-live-pc` (so that `project.json` lies directly in that folder), then pick it
-under "Installed". Wallpaper Engine properties: frame rate (30), render scale, Earth size. It also runs in any WebGL2
-browser (`python tools/web_server.py`, then open http://127.0.0.1:8791). The PC version has none of the Android settings
-and has only been tried briefly in Wallpaper Engine (it runs and shows the picture), not for hours; its performance was measured in a browser. To rebuild `web/assets`
+under "Installed". Every setting of the Android app is a Wallpaper Engine property too (Earth size, orbit time and direction,
+camera latitude, star brightness, cloud speed and direction, switches for each effect, frame rate (30 by default), render
+resolution, sharp cloud edges, smoothing of the Sun and Moon). It also runs in any WebGL2
+browser (`python tools/web_server.py`, then open http://127.0.0.1:8791). It has only been tried briefly in Wallpaper Engine (it runs and shows the picture), not for hours; its performance was measured in a browser. To rebuild `web/assets`
 yourself run `python tools/make_web.py` (needs the intermediate textures from the tools below).
 
 ## Build

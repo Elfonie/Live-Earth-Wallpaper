@@ -1,15 +1,38 @@
 {
   "title": "Earth Live",
-  "description": "A real-time Earth with real day and night, seasons, Sun, Moon, stars, Milky Way, clouds, aurora and city lights. Fully offline.",
+  "description": "A real-time Earth with real day and night, seasons, Sun, Moon, stars, Milky Way, clouds, aurora and city lights. Fully offline. Not endorsed by NASA, ESA or GEBCO. Credits: see ATTRIBUTION.md.",
   "type": "web",
   "file": "index.html",
   "preview": "preview.jpg",
   "general": {
     "properties": {
       "schemecolor": { "order": 0, "text": "ui_browse_properties_scheme_color", "type": "color", "value": "0 0 0" },
-      "fps": { "order": 1, "text": "Frame rate", "type": "slider", "min": 10, "max": 60, "step": 1, "value": 30 },
-      "renderscale": { "order": 2, "text": "Render scale", "type": "slider", "min": 0.5, "max": 1.0, "step": 0.05, "value": 1.0 },
-      "earthsize": { "order": 3, "text": "Earth size (% of screen height)", "type": "slider", "min": 60, "max": 100, "step": 1, "value": 90 }
+
+      "earthsize": { "order": 1, "text": "Earth size (% of screen height)", "type": "slider", "min": 60, "max": 100, "step": 1, "value": 90 },
+      "orbitminutes": { "order": 2, "text": "Orbit time (minutes per lap)", "type": "slider", "min": 6, "max": 120, "step": 1, "value": 24 },
+      "orbitdirection": {
+        "order": 3, "text": "Direction of the Earth's turning", "type": "combo", "value": "0",
+        "options": [ { "label": "Left to right (as the Earth really turns)", "value": "0" }, { "label": "Right to left", "value": "1" } ]
+      },
+      "latitude": { "order": 4, "text": "Camera latitude (negative = south)", "type": "slider", "min": -60, "max": 60, "step": 1, "value": 21 },
+      "starbrightness": { "order": 5, "text": "Star brightness (%)", "type": "slider", "min": 25, "max": 150, "step": 5, "value": 100 },
+
+      "clouds": { "order": 10, "text": "Clouds", "type": "bool", "value": true },
+      "cirrus": { "order": 11, "text": "Cirrus clouds", "type": "bool", "value": true },
+      "citylights": { "order": 12, "text": "City lights", "type": "bool", "value": true },
+      "aurora": { "order": 13, "text": "Aurora", "type": "bool", "value": true },
+      "airglow": { "order": 14, "text": "Airglow and night clouds", "type": "bool", "value": true },
+      "lightning": { "order": 15, "text": "Lightning", "type": "bool", "value": true },
+      "cloudspeed": { "order": 16, "text": "Cloud speed (%, 100 = once around the Earth in an hour)", "type": "slider", "min": 0, "max": 300, "step": 10, "value": 100 },
+      "clouddirection": {
+        "order": 17, "text": "Cloud direction", "type": "combo", "value": "0",
+        "options": [ { "label": "East (as in reality)", "value": "0" }, { "label": "West", "value": "1" } ]
+      },
+
+      "fps": { "order": 20, "text": "Frame rate", "type": "slider", "min": 5, "max": 60, "step": 1, "value": 30 },
+      "renderscale": { "order": 21, "text": "Render resolution", "type": "slider", "min": 0.5, "max": 1.0, "step": 0.05, "value": 1.0 },
+      "sharpclouds": { "order": 22, "text": "Sharp cloud edges (anti-aliasing)", "type": "bool", "value": true },
+      "sunmoonblur": { "order": 23, "text": "Smooth Sun and Moon (motion blur)", "type": "bool", "value": true }
     }
   }
 }

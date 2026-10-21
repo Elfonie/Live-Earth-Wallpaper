@@ -2,7 +2,16 @@
 // Scene -> offscreen R11G11B10F buffer (earth.frag with HDR_OUT), then resolve.frag: ACES, sRGB, dither.
 (function () {
   'use strict';
-  const settings = { fps: 30, scale: 1.0, fill: 0.9, starSigma: 0.7, starLimit: 9.0 }; // fill: the Earth's diameter as a fraction of the screen height
+  // The same settings as the Android app (see project.json for the Wallpaper Engine properties that fill them).
+  // fill: the Earth's diameter as a fraction of the screen height; starSigma and starLimit are compiled into the shader.
+  const settings = {
+    fps: 30, scale: 1.0, fill: 0.9, starSigma: 0.7, starLimit: 9.0,
+    periodMinutes: 24, direction: 1, latitude: 21.4, starGain: 1, cloudSpeed: 100, cloudDirection: 1,
+    off: {}, // effect name -> true while the effect is switched off
+  };
+  // SKIP_* bits of earth.frag for the effects that can be switched off
+  const SKIP_BITS = { aurora: 16, lightning: 2048, airglow: 1024, cirrus: 4096, clouds: 256, citylights: 512, sharpclouds: 64, sunmoonblur: 8192 };
+  const skipMask = () => Object.keys(SKIP_BITS).reduce((m, k) => (settings.off[k] ? m | SKIP_BITS[k] : m), 0);
   // The camera is as far away as in the phone app (Earth fills 92 % of a 1280x2856 screen with a 30 degree vertical field),
   // so perspective, atmosphere, star density and sky detail match; only the field of view follows the screen's shape.
   const PHONE_TAN_X = Math.tan(15 * Math.PI / 180) * 1280 / 2856;
@@ -181,11 +190,32 @@
     tanX = tanY * width / height;
   }
 
+  // The cloud layer's drift against the ground in turns (a lap takes an hour at 100 %; negative: westward)
+  function cloudShift(sec) {
+    const rate = settings.cloudSpeed / 100 * settings.cloudDirection;
+    if (rate === 0) return 0;
+    const lap = 3600 / Math.abs(rate);
+    return Math.sign(rate) * (sec % lap) / lap;
+  }
+
+  // How far the camera turned about the north axis during one frame: the Sun and the Moon are smeared over it, so they glide
+  // instead of jumping at low frame rates (earth.frag, uSkyBlur)
+  function cameraTurn(jd, d, period) {
+    const frame = 1 / settings.fps;
+    const a = Astro.orbitPose(jd, d, settings.latitude, period, settings.direction).position;
+    const b = Astro.orbitPose(jd - frame / 86400, d, settings.latitude, period, settings.direction).position;
+    let turn = Math.atan2(a[2], a[0]) - Math.atan2(b[2], b[0]);
+    while (turn > Math.PI) turn -= 2 * Math.PI;
+    while (turn < -Math.PI) turn += 2 * Math.PI;
+    return turn;
+  }
+
   function draw(nowMs) {
     const month = Astro.month(nowMs);
     if (month !== dayMonth && !draw.loading) { draw.loading = true; loadMonth(month).finally(() => { draw.loading = false; }); }
     const s = Astro.scene(nowMs);
-    const pose = Astro.orbitPose(s.jd, dist);
+    const period = settings.periodMinutes * 60;
+    const pose = Astro.orbitPose(s.jd, dist, settings.latitude, period, settings.direction);
     const sec = nowMs / 1000;
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, hdrFbo);
@@ -194,7 +224,10 @@
     const u3 = (n, v) => gl.uniform3f(loc(progScene, n), v[0], v[1], v[2]);
     u3('uCamPos', pose.position); u3('uCamRight', pose.right); u3('uCamUp', pose.up); u3('uCamFwd', pose.forward);
     gl.uniformMatrix3fv(loc(progScene, 'uSkyRot'), false, Astro.skyMatrix(s.jd, pose));
-    gl.uniform1f(loc(progScene, 'uCloudShift'), (sec % 3600) / 3600);
+    gl.uniform1f(loc(progScene, 'uCloudShift'), cloudShift(sec));
+    gl.uniform1i(loc(progScene, 'uSkip'), skipMask());
+    gl.uniform1f(loc(progScene, 'uStarGain'), settings.starGain);
+    gl.uniform1f(loc(progScene, 'uSkyBlur'), cameraTurn(s.jd, dist, period));
     gl.uniform1f(loc(progScene, 'uAuroraPhase'), (sec % 120) / 120);
     gl.uniform1f(loc(progScene, 'uTime'), sec % 3600);
     gl.uniform1f(loc(progScene, 'uPixelAngle'), 2 * tanX / width);
@@ -241,7 +274,6 @@
     const samplers = { uDay: 0, uNight: 1, uTopo: 2, uClouds: 3, uSkyCells: 4, uSkyStars: 5, uMilky: 6, uStarColors: 7, uMoon: 8, uTransmittance: 10, uScatR: 11, uScatM: 12, uScatMS: 13 };
     for (const n in samplers) gl.uniform1i(loc(progScene, n), samplers[n]);
     gl.uniform1f(loc(progScene, 'uDither'), 1 / 255);
-    gl.uniform1f(loc(progScene, 'uStarGain'), 1);
     gl.useProgram(progResolve);
     gl.uniform1i(loc(progResolve, 'uHdr'), UNIT.hdr);
     gl.uniform1f(loc(progResolve, 'uP3'), 0);
@@ -281,14 +313,29 @@
     window.addEventListener('resize', resize);
   }
 
-  // Wallpaper Engine user properties (project.json)
+  // Wallpaper Engine user properties (project.json). WE sends all of them at load and then the changed ones.
+  const num = (v) => (typeof v === 'number' ? v : parseFloat(v));
+  const handlers = {
+    fps: (v) => { settings.fps = num(v); },
+    renderscale: (v) => { settings.scale = num(v); resize(); },
+    earthsize: (v) => { settings.fill = num(v) / 100; width = 0; resize(); }, // width = 0 forces the geometry to be redone
+    orbitminutes: (v) => { settings.periodMinutes = num(v); },
+    orbitdirection: (v) => { settings.direction = String(v) === '1' ? -1 : 1; },
+    latitude: (v) => { settings.latitude = num(v); },
+    starbrightness: (v) => { settings.starGain = num(v) / 100; },
+    cloudspeed: (v) => { settings.cloudSpeed = num(v); },
+    clouddirection: (v) => { settings.cloudDirection = String(v) === '1' ? -1 : 1; },
+  };
+  for (const k in SKIP_BITS) handlers[k] = (v) => { settings.off[k] = !(v === true || v === 'true' || v === 1); }; // switches: on by default
   window.wallpaperPropertyListener = {
     applyUserProperties(p) {
-      if (p.fps) settings.fps = p.fps.value;
-      if (p.renderscale) { settings.scale = p.renderscale.value; resize(); }
-      if (p.earthsize) { settings.fill = p.earthsize.value / 100; width = 0; resize(); } // width = 0 forces the geometry to be redone
+      for (const k in p) if (handlers[k] && p[k] && p[k].value !== undefined) handlers[k](p[k].value);
     },
   };
+  // ?p.latitude=-40&p.aurora=false: the same properties from the address, for tests without Wallpaper Engine
+  const fromUrl = {};
+  params.forEach((v, k) => { if (k.startsWith('p.')) fromUrl[k.slice(2)] = { value: v === 'true' ? true : v === 'false' ? false : v }; });
+  window.wallpaperPropertyListener.applyUserProperties(fromUrl);
 
   start().catch((e) => { console.error(e); say('Error: ' + e.message); });
 })();
