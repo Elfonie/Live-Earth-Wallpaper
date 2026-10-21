@@ -57,6 +57,7 @@ once to a running wallpaper.
 | Camera latitude | 60 S to 60 N | 21.4 N | where the camera circles; north shows the northern aurora, south the southern one |
 | Star brightness | 25-150 % | 100 % | brightness of the stars (they stay sharp points) |
 | Clouds, cirrus, city lights, aurora, airglow and night clouds, lightning | on / off | on | switch parts of the picture |
+| Lightning frequency | 25-500 % | 100 % | how often the night storms flash (only while lightning is on) |
 | Cloud speed | 0-300 % | 100 % | 100 % = once around the Earth in an hour, 0 % = still |
 | Cloud direction | east / west | east | real clouds mostly drift east |
 | Frame rate | 5 / 10 / 20 / 30 fps | 10 fps | smoother motion costs power |
@@ -75,7 +76,7 @@ Display 1280 x 2856 (LTPO, 120 Hz), GPU PowerVR D-Series DXT-48-1536, debug buil
 
 | | Result |
 |---|---|
-| GPU time per frame, everything on | **about 22-23 ms** in a busy loop; 25-30 ms measured during normal operation |
+| GPU time per frame, everything on | **about 25 ms** in a busy loop (23-27 ms depending on the scene); 25-30 ms measured during normal operation |
 | Frame budget at 10 fps / 20 fps / 30 fps | 100 ms / 50 ms / 33 ms |
 | So the GPU is busy about | **23-30 % at 10 fps**, 45-60 % at 20 fps, 70-90 % at 30 fps (hot and power hungry) |
 | Cheapest picture (planet and sky only) | about 10 ms |
@@ -88,19 +89,19 @@ Display 1280 x 2856 (LTPO, 120 Hz), GPU PowerVR D-Series DXT-48-1536, debug buil
 
 | Feature switched off | Saves |
 |---|---|
-| Clouds (main layer, cirrus and cloud detail) | 4.9 ms |
-| Sun and Moon (includes the motion blur) | 2.8 ms |
-| Aurora | 1.6 ms |
-| Stars (sprites) | 1.5 ms |
-| Anti-aliasing of the cloud edges (1 tap instead of 4) | 1.3 ms |
-| City lights | 1.3 ms |
-| Atmosphere in front of the planet | 1.2 ms |
-| Atmosphere behind the planet | 1.1 ms |
-| Airglow and noctilucent clouds | 0.7 ms |
-| Cloud relief | 0.4 ms |
-| Milky Way | 0.3 ms |
-| Lightning | about 0 ms |
-| **Everything except the planet and sky** | **12.8 ms** (from 22.5 to 9.8 ms) |
+| Clouds (main layer, cirrus and cloud detail) | 5.3 ms |
+| Sun and Moon (includes the motion blur) | 2.9 ms |
+| Aurora | 2.9 ms |
+| Stars (sprites) | 1.4 ms |
+| Anti-aliasing of the cloud edges (1 tap instead of 4) | 1.2 ms |
+| City lights (with their glow) | 1.4 ms |
+| Atmosphere in front of the planet | 1.8 ms |
+| Atmosphere behind the planet | 1.4 ms |
+| Airglow and noctilucent clouds | 0.8 ms |
+| Cloud relief | 0.8 ms |
+| Milky Way | 0.8 ms |
+| Lightning | 0.2 ms |
+| **Everything except the planet and sky** | **14.6 ms** (from 24.8 to 10.2 ms) |
 
 The four scenes were: day over Europe, night with aurora and the Sun in view, the Moon in view, and the Pacific. The values do
 not add up (features overlap) and are accurate to about +-1 ms.
@@ -126,7 +127,8 @@ The picture covers the same field of view at any resolution (the Earth fills 90 
 show the same scene, only sharper; stars keep their size and brightness relative to the screen. Ultrawide screens show more sky
 at the sides; a screen taller than wide fits the Earth to the width. GPU time per frame on the Intel Arc B580 (browser,
 `?bench=1`): **1920 x 1080: 1.3 ms, 2560 x 1440: 1.6-1.9 ms, 3440 x 1440: 2.2 ms, 3840 x 2160: 3.3 ms**. The "Render resolution"
-property lowers the cost further.
+property lowers the cost (below 100 %) or supersamples for sharper stars and edges (up to 200 % in the PC version: 2560 x 1440 at
+200 % took 6.9 ms).
 
 ### How to measure it yourself
 
@@ -151,7 +153,7 @@ Or by hand: download `earth-live-pc.zip` from the [Releases](../../releases) pag
 "Installed".
 
 Every setting of the Android app is a Wallpaper Engine property too: Earth size, orbit time and direction, camera latitude,
-star brightness, cloud speed and direction, a switch for every effect, frame rate (30 by default), render resolution, sharp
+star brightness, lightning frequency, cloud speed and direction, a switch for every effect, frame rate (30 by default), render resolution, sharp
 cloud edges and smoothing of the Sun and Moon. The picture adapts to the screen: 1080p to 4K, ultrawide, and screens that are
 taller than wide.
 

@@ -61,6 +61,8 @@ class SettingsActivity : Activity() {
             details.addView(toggle(key, title, hint))
             details.addView(Ui.divider(this))
         }
+        details.addView(slider(R.string.lightning_rate, R.string.lightning_rate_hint, 25, 500, 25, prefs.getInt(Prefs.LIGHTNING_RATE, Prefs.DEFAULT_LIGHTNING_RATE), { "$it %" }) { prefs.edit().putInt(Prefs.LIGHTNING_RATE, it).apply() })
+        details.addView(Ui.divider(this))
         details.addView(slider(R.string.cloud_speed, R.string.cloud_speed_hint, 0, 300, 10, prefs.getInt(Prefs.CLOUD_SPEED, Prefs.DEFAULT_CLOUD_SPEED), { "$it %" }) { prefs.edit().putInt(Prefs.CLOUD_SPEED, it).apply() })
         details.addView(Ui.divider(this))
         details.addView(Ui.text(this, getString(R.string.cloud_direction), 16f, R.color.text, bold = true))

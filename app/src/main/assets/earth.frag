@@ -36,6 +36,7 @@ uniform vec3 uEclipticPole;  // north pole of the ecliptic in the Earth-fixed fr
 uniform int uSkip;          // bits that switch parts of the picture off (0 = everything on), see SKIP_*: the user's settings, and profiling
 uniform float uSkyBlur;   // radians the camera turned about the north axis during one frame (0: no motion blur of the Sun and the Moon)
 uniform float uStarGain;   // the user's star brightness, 1 = as drawn by default
+uniform float uFlashRate;  // the user's lightning frequency, 1 = as drawn by default
 uniform float uAuroraPhase; // 0..1 around every 2 minutes; the aurora only uses periodic functions of it, so it never jumps
 uniform float uCloudShift; // the cloud layer's eastward drift against the ground, in turns (0..1)
 uniform float uTime;       // seconds, wrapped; only drives the star flicker
@@ -51,8 +52,8 @@ uniform sampler2D uMilky;           // gamma 2.2 encoded diffuse Milky Way
 
 const float SUN_E = 3.2;
 const float ATMO_BOOST = 0.8; // the ground is shaded as albedo * E (no 1/pi): the same scale for the scattered light
-const vec3 MOON_COLOR = vec3(0.06, 0.085, 0.13) * 0.188; // moonlight: 1 : 200 of the Sun (the real ratio is 1 : 400 000)
-const vec3 AIRGLOW = vec3(0.006, 0.008, 0.014);
+const vec3 MOON_COLOR = vec3(0.06, 0.085, 0.13) * 0.0537; // moonlight: 1 : 700 of the Sun (the real ratio is 1 : 400 000)
+const vec3 AIRGLOW = vec3(0.006, 0.008, 0.014) * 0.2; // the faint light of the night sky on the dark side
 const vec3 SKY_AMBIENT = vec3(0.5, 0.65, 1.0) * 0.07;
 
 
@@ -72,10 +73,13 @@ const vec3 MAG_POLE = vec3(0.0479, 0.9870, 0.1536); // renderer frame: x = 0N 0E
 const float AURORA_COLATITUDE = 0.33;               // 19 degrees from the pole at magnetic noon, 3 degrees more at midnight
 const float AURORA_WIDTH = 0.05;
 const float AURORA_GAIN = 0.31;
-// heights 100, 110, 125, 150, 200, 300 km: a sharp lower edge with a violet-pink fringe, the green body that thins out
-// upwards (557.7 nm), a trace of yellow, and the faint red of atomic oxygen at the top (630 nm)
-const float AURORA_SHELL[6] = float[6](1.0157, 1.0173, 1.0196, 1.0235, 1.0314, 1.0471);
-const vec3 AURORA_COLOUR[6] = vec3[6](vec3(0.60, 0.22, 0.80) * 0.30, vec3(0.20, 1.00, 0.42), vec3(0.25, 1.00, 0.35) * 0.70, vec3(0.35, 0.90, 0.30) * 0.28, vec3(0.60, 0.65, 0.22) * 0.08, vec3(0.90, 0.12, 0.10) * 0.12);
+// heights 100 to 300 km at 64 % of their real height above the ground (lower), as 16 thin shells of equal spacing that
+// follow a smooth profile: a sharp lower edge with a violet-pink fringe, the green body that thins out upwards (557.7 nm), a
+// trace of yellow, and the faint red of atomic oxygen at the top (630 nm). Many close shells (a pixel or less apart) so that
+// the layers do not show as separate stripes where the curtains are seen edge-on at the limb.
+const int AURORA_N = 16;
+const float AURORA_SHELL[16] = float[16](1.0100, 1.0114, 1.0127, 1.0141, 1.0154, 1.0167, 1.0181, 1.0194, 1.0208, 1.0221, 1.0234, 1.0248, 1.0261, 1.0275, 1.0288, 1.0301);
+const vec3 AURORA_COLOUR[16] = vec3[16](vec3(0.2398, 0.0879, 0.3197), vec3(0.1940, 0.9446, 0.3896), vec3(0.1120, 0.4445, 0.1555), vec3(0.0673, 0.2388, 0.0827), vec3(0.0329, 0.0836, 0.0279), vec3(0.0259, 0.0623, 0.0208), vec3(0.0190, 0.0411, 0.0137), vec3(0.0120, 0.0198, 0.0067), vec3(0.0099, 0.0089, 0.0031), vec3(0.0126, 0.0081, 0.0031), vec3(0.0153, 0.0074, 0.0031), vec3(0.0180, 0.0067, 0.0032), vec3(0.0207, 0.0060, 0.0032), vec3(0.0234, 0.0053, 0.0032), vec3(0.0261, 0.0046, 0.0032), vec3(0.0288, 0.0038, 0.0032));
 
 // Upper atmosphere seen from orbit: airglow (thin layers at 85-115 km: orange sodium/OH below, green oxygen in the middle,
 // faint red above) shines all night but is only visible along the limb, where the line of sight runs through the layers
@@ -85,15 +89,24 @@ const float AIRGLOW_GAIN = 0.0008;
 const float NLC_GAIN = 0.035;
 const float NLC_LOW = 1.0128;
 const float NLC_HIGH = 1.0142;
-const float UPPER_AIR_TOP = 1.0230;
+const float UPPER_AIR_TOP = 1.0211;
+// The airglow layers as bell-shaped profiles in height, sampled in 17 thin shells of 0.0012 Earth radii (8 km) from 1.007: a faint
+// diffuse base low down, orange OH/sodium, the green of atomic oxygen (557.7 nm) in the middle, a trace of yellow-green and the
+// faint red (630 nm) above it. The colour changes smoothly with height and the glow fades into the dark below instead of
+// stopping, so there is a band and not two thin lines.
+const int AIRGLOW_N = 22;
+const float AIRGLOW_R0 = 1.0035, AIRGLOW_STEP = 0.0008;
+const vec3 AIRGLOW_PROFILE[22] = vec3[22](vec3(0.0195, 0.0280, 0.0105), vec3(0.0298, 0.0426, 0.0160), vec3(0.0421, 0.0600, 0.0226), vec3(0.0554, 0.0793, 0.0300), vec3(0.0700, 0.1026, 0.0392), vec3(0.0932, 0.1422, 0.0549), vec3(0.1561, 0.2339, 0.0893), vec3(0.3127, 0.4328, 0.1600), vec3(0.5328, 0.7312, 0.2681), vec3(0.6507, 1.0043, 0.3802), vec3(0.6198, 1.1594, 0.4596), vec3(0.5639, 1.1982, 0.4876), vec3(0.5263, 1.1133, 0.4543), vec3(0.4747, 0.9155, 0.3702), vec3(0.4054, 0.6713, 0.2677), vec3(0.3352, 0.4509, 0.1776), vec3(0.2750, 0.2866, 0.1126), vec3(0.2267, 0.1769, 0.0709), vec3(0.1882, 0.1076, 0.0456), vec3(0.1571, 0.0654, 0.0303), vec3(0.1311, 0.0408, 0.0211), vec3(0.1084, 0.0268, 0.0154));
+
 
 // Lightning: flashes inside large night-side cloud decks of the tropics, on a grid of 1.5 degree cells. Every cell may
 // flash once per FLASH_PERIOD seconds, with a probability that grows with the cloudiness; a flash is a soft glow of about
 // 80 km that decays within a fifth of a second (two pulses), so that even 10 frames per second catch it.
 const vec2 FLASH_GRID = vec2(240.0, 120.0);
 const float FLASH_PERIOD = 2.0;
-const float FLASH_CHANCE = 0.0007;
-const float FLASH_GAIN = 1.1;
+const float FLASH_CHANCE = 0.0006;
+const float FLASH_GAIN = 1.3;
+const float CITY_GLOW_GAIN = 0.9;
 
 const float R_CIRRUS = 1.006;        // a thin high layer above the cloud shell (exaggerated like it: about 38 km)
 const float CLOUD_DETAIL = 0.14;      // noise finer than the map: ragged edges and texture inside the decks
@@ -220,45 +233,73 @@ vec2 equirectUV(vec3 dir) { // NASA Deep Star Map layout: RA grows to the left, 
 
 
 
+// Noise along the magnetic azimuth az (ca = cos, sin of it): sampled on a circle in the noise plane so that it has no seam where
+// az wraps; freq is the number of features around the oval, off moves the circle through the noise (the time evolution).
+float auroraNoise(vec2 ca, float freq, vec2 off) { return perlin(freq * 0.15915494 * ca + off); }
+
 // The emission of the aurora per unit path at the place pn (the same at every height), 0 on the day side. An aurora is a
-// few thin curtains (sheets standing on the field lines) that follow the oval in folds, with fine rays along them.
-float auroraAt(vec3 pn) {
+// few thin curtains (sheets standing on the field lines) that follow the oval in folds, with fine rays along them. pxAz is the
+// size of a pixel in radians of azimuth: detail finer than a pixel is faded out, and the edges are never sharper than a pixel.
+float auroraAt(vec3 pn, float pxAz, float pxColat) {
     float night = smoothstep(0.15, -0.25, dot(pn, uSunDir));
     if (night <= 0.0) return 0.0;
     vec3 u = normalize(cross(MAG_POLE, vec3(0.0, 0.0, 1.0)));
     vec3 v = cross(MAG_POLE, u);
     float az = atan(dot(pn, v), dot(pn, u));
+    vec2 ca = vec2(cos(az), sin(az));
     float t = 6.2831853 * uAuroraPhase;
+    // circles through the noise: every pattern drifts and reshapes during the 2 minutes, and ends where it began
+    vec2 s0 = vec2(cos(t), sin(t));
+    vec2 s1 = vec2(cos(t + 1.0), sin(t + 1.0));
+    vec2 s2 = vec2(cos(t + 2.0), sin(t + 2.0));
     // the oval sits closer to the equator and glows brighter towards magnetic midnight (the side away from the Sun)
     float midnight = 0.5 - 0.5 * cos(az - atan(dot(uSunDir, v), dot(uSunDir, u)));
     float colat = acos(min(abs(dot(pn, MAG_POLE)), 1.0));
     // the oval is wavy; it is sharp on its equatorward side and diffuse on the poleward side
-    float centre = AURORA_COLATITUDE + 0.05 * midnight + 0.05 * perlin(vec2(az * 1.6 + 7.0, 0.5));
+    float centre = AURORA_COLATITUDE + 0.05 * midnight + 0.05 * auroraNoise(ca, 10.0, vec2(7.0, 0.5) + 0.5 * s0);
     float off = (colat - centre) / AURORA_WIDTH;
     float envelope = off > 0.0 ? exp(-off * off * 4.0) : exp(-off * off * 0.8);
     if (envelope < 0.02) return 0.0;
-    // a main curtain and a fainter second one, folded at two scales and slowly moving; the lower (equatorward) edge is sharp
-    float fold1 = 0.020 * perlin(vec2(az * 7.0 + 2.0 * sin(t), 3.0)) + 0.007 * perlin(vec2(az * 21.0 - 3.0 * sin(t + 1.0), 7.0));
-    float fold2 = 0.015 * perlin(vec2(az * 5.0 + 9.0 + 1.5 * sin(t + 3.0), 11.0));
-    float r1 = (colat - centre - 0.012 + fold1) / 0.009;
-    float r2 = (colat - centre + 0.020 + fold2) / 0.011;
-    float curtains = exp(-r1 * r1 * (r1 > 0.0 ? 2.5 : 0.8)) + 0.45 * exp(-r2 * r2 * (r2 > 0.0 ? 2.5 : 0.8));
-    // bright stretches and dim ones, and fine rays along the curtains
-    float patches = 0.15 + 0.85 * smoothstep(-0.25, 0.55, perlin(vec2(az * 2.4 + 3.0 + 0.5 * sin(t), 1.3)));
-    float rays = clamp(0.6 + 0.5 * perlin(vec2(az * 70.0 + 3.0 * sin(t + 2.0), 0.0)), 0.15, 1.0);
+    // a main curtain and a fainter second one, folded at two scales and moving; the lower (equatorward) edge is sharp
+    float fade21 = 1.0 - smoothstep(0.3, 0.7, pxAz * 21.0);
+    float fold1 = 0.028 * auroraNoise(ca, 7.0, vec2(2.0, 3.0) + 2.0 * s0) + 0.007 * fade21 * auroraNoise(ca, 21.0, vec2(-3.0, 7.0) + 3.0 * s1);
+    float fold2 = 0.015 * auroraNoise(ca, 5.0, vec2(9.0, 11.0) + 1.5 * s2);
+    float w1 = max(0.0105, 1.2 * pxColat), w2 = max(0.0135, 1.2 * pxColat);
+    float r1 = (colat - centre - 0.012 + fold1) / w1;
+    float r2 = (colat - centre + 0.020 + fold2) / w2;
+    float curtains = exp(-r1 * r1 * (r1 > 0.0 ? 1.9 : 0.65)) + 0.5 * exp(-r2 * r2 * (r2 > 0.0 ? 1.9 : 0.65));
+    // bright stretches and dim ones, brightness waves running along the oval, and rays along the curtains that shimmer
+    float patches = 0.15 + 0.85 * smoothstep(-0.2, 0.4, auroraNoise(ca, 15.0, vec2(3.0, 1.3) + 0.8 * s0));
+    float pulse = 0.82 + 0.18 * sin(8.0 * t - 5.0 * az);
+    float fade70 = 1.0 - smoothstep(0.3, 0.7, pxAz * 70.0);
+    float rays = clamp(0.55 + 0.9 * (0.9 * auroraNoise(ca, 32.0, vec2(0.0, 5.0) + 3.0 * s2) + 0.8 * fade70 * auroraNoise(ca, 70.0, vec2(3.0, 0.0) + 5.0 * s1)), 0.06, 1.35);
     float sector = 0.35 + 0.65 * midnight * midnight;
-    return envelope * patches * sector * (curtains * rays + 0.16) * night;
+    return envelope * patches * pulse * sector * (0.9 * curtains * rays + 0.22) * night;
 }
 
 vec3 aurora(vec3 ro, vec3 rd, float tca, float d2) {
-    float e = 0.0;
     vec3 sum = vec3(0.0);
-    for (int i = 0; i < 6; i++) {
+    // Quick test: the shells are so close together that a ray meets the polar caps on all of them or on none. Look at the two
+    // ends of the stack (or the outer one and the tangent point for a grazing ray), with a margin for the limb where the hit
+    // points move apart: only then the 16 shells are worth their cost.
+    float rOut = AURORA_SHELL[AURORA_N - 1], rIn = AURORA_SHELL[0];
+    if (d2 >= rOut * rOut) return sum;
+    vec3 pOut = normalize(ro + rd * (tca - sqrt(rOut * rOut - d2)));
+    bool maybe = abs(dot(pOut, MAG_POLE)) > 0.76;
+    if (!maybe) {
+        vec3 pOther = normalize(ro + rd * (d2 < rIn * rIn ? tca - sqrt(rIn * rIn - d2) : tca)); // the inner shell, or the tangent point
+        maybe = abs(dot(pOther, MAG_POLE)) > 0.76;
+    }
+    if (!maybe) return sum;
+    for (int i = 0; i < AURORA_N; i++) {
         float r = AURORA_SHELL[i];
         if (d2 >= r * r) continue;
-        vec3 pn = normalize(ro + rd * (tca - sqrt(r * r - d2)));
+        float t = tca - sqrt(r * r - d2);
+        vec3 pn = normalize(ro + rd * t);
         if (abs(dot(pn, MAG_POLE)) < 0.88) continue;
-        sum += AURORA_COLOUR[i] * auroraAt(pn);
+        // a pixel's footprint on the shell in Earth radii (stretched where the ray grazes it), and in azimuth at the oval
+        float px = uPixelAngle * t / clamp(abs(dot(rd, pn)), 0.25, 1.0);
+        sum += AURORA_COLOUR[i] * auroraAt(pn, px * 3.1, px);
     }
     return sum * AURORA_GAIN;
 }
@@ -340,13 +381,16 @@ vec4 moonBody(vec3 ro, vec3 rd) {
     vec3 albedo = textureLod(uMoon, uv, lod).rgb;
     float mu0 = max(dot(n, gSun), 0.0);
     float mu = max(dot(n, -rd), 0.02);
-    float shade = 2.0 * mu0 / (mu0 + mu) + 0.01; // Lommel-Seeliger: a flat full moon; a trace of Earthshine on the dark side
-    vec3 lit = vec3(shade);
+    float shade = 2.0 * mu0 / (mu0 + mu); // Lommel-Seeliger: a flat full moon
+    // Earthshine: the Earth seen from the Moon has the opposite phase (full at new Moon) and lights the near side with its own
+    // blue. Far brighter than the real 1 in 5000 of sunlight so that the dark part of a crescent shows (the "Da Vinci glow").
+    vec3 earthshine = vec3(0.55, 0.72, 1.0) * (0.04 * (1.0 - uMoonPhase) * max(dot(n, ex), 0.0));
+    vec3 lit = vec3(shade) + earthshine;
     if (uLunarEclipse > 0.5) { // the Earth in front of the Sun, seen from this spot of the Moon; its air lets a little red light through
         float dEarth = length(surface);
         float rEarth = asin(min(1.0 / dEarth, 1.0)) * 1.02;
         float shadowed = dot(-surface, gSun) > 0.0 ? lensFraction(SUN_ANGULAR_RADIUS, rEarth, length(cross(-surface / dEarth, gSun))) : 0.0;
-        lit = shade * (1.0 - shadowed) + shadowed * 0.04 * vec3(1.0, 0.33, 0.12);
+        lit = shade * (1.0 - shadowed) + shadowed * 0.04 * vec3(1.0, 0.33, 0.12) + earthshine;
     }
     return vec4(albedo * (MOON_GAIN * SUN_E) * lit, cover);
 }
@@ -370,7 +414,7 @@ float softShell(float d2, float r1, float r2) {
                 + 0.12 * (shellPath(d2, r1 - t, r1 - 0.5 * t) + shellPath(d2, r2 + 0.5 * t, r2 + t)));
 }
 
-vec3 upperAtmosphere(vec3 ro, vec3 rd, float tca, float d2) {
+vec3 upperAtmosphere(vec3 ro, vec3 rd, float tca, float d2, float fw) { // fw: the size of a pixel in the closest-approach distance
     if (d2 >= UPPER_AIR_TOP * UPPER_AIR_TOP) return vec3(0.0);
     // the place the line of sight is "at": the tangent point at the limb, else where it enters the layers
     vec3 pn = normalize(ro + rd * (d2 >= R_EARTH * R_EARTH ? tca : tca - sqrt(max(UPPER_AIR_TOP * UPPER_AIR_TOP - d2, 0.0))));
@@ -379,11 +423,24 @@ vec3 upperAtmosphere(vec3 ro, vec3 rd, float tca, float d2) {
 
     float night = smoothstep(0.12, -0.25, sunDot);
     if (night > 0.0) {
-        vec3 glow = vec3(0.90, 0.55, 0.12) * (0.35 * softShell(d2, 1.0136, 1.0150))
-                  + vec3(0.35, 1.00, 0.42) * softShell(d2, 1.0150, 1.0180)
-                  + vec3(0.80, 0.15, 0.10) * (0.18 * softShell(d2, 1.0180, 1.0230));
-        // never even: gravity waves and patches of the layer make it brighter and dimmer along the limb
-        float uneven = 0.55 + 0.45 * smoothstep(-0.5, 0.6, perlin(vec2(pn.x * 6.0 + pn.z * 4.0, pn.y * 8.0 + 2.0 * pn.z)));
+        // Three taps across the pixel (along the closest-approach distance) average the thin bright line at the limb and the
+        // step at the planet's edge: without them the glow shows pixel stairs. On the disc: straight through the layers (the
+        // sum of the profile); at the limb the line of sight runs along the layers, shell by shell.
+        vec3 glow = vec3(0.0);
+        float dd = sqrt(d2);
+        for (int t = 0; t < 3; t++) {
+            float ds = dd + (float(t) - 1.0) * 0.4 * fw;
+            float d2s = ds * ds;
+            if (d2s < R_EARTH * R_EARTH) { glow += vec3(2.3896, 3.6279, 1.4336) * 0.3333; continue; }
+            for (int k = 0; k < AIRGLOW_N; k++) {
+                float r1 = AIRGLOW_R0 + AIRGLOW_STEP * float(k);
+                glow += AIRGLOW_PROFILE[k] * (0.1333 * min(shellPath(d2s, r1, r1 + AIRGLOW_STEP), 24.0)); // 0.4 / 3; the cap tames the thin bright line a shell makes at its tangent
+            }
+        }
+        // never even: gravity waves and patches of the layer make it brighter and dimmer along the limb, in broad patches and
+        // finer streaks
+        float patchy = perlin(vec2(pn.x * 6.0 + pn.z * 4.0, pn.y * 8.0 + 2.0 * pn.z)) + 0.6 * perlin(vec2(pn.x * 23.0 + pn.z * 17.0, pn.y * 31.0 + 5.0));
+        float uneven = 0.4 + 0.6 * smoothstep(-0.5, 0.9, patchy);
         sum += glow * (AIRGLOW_GAIN * night * uneven);
     }
 
@@ -404,29 +461,39 @@ vec3 upperAtmosphere(vec3 ro, vec3 rd, float tca, float d2) {
     return sum;
 }
 
-// Flash light of the lightning at the cloud shell point with texture coordinates uv, 0 where there is none
-float lightning(vec2 uv, float storm, float lat) {
+// Flash light of the lightning at the cloud shell point with texture coordinates uv: x the bright core, y the wide soft halo
+// in the cloud around it, 0 where there is none. Storms are active in patches that change every 20 seconds, and a flash is
+// a few strokes in quick succession a little apart.
+vec2 lightning(vec2 uv, float storm, float lat) {
     float tb = uTime / FLASH_PERIOD;
     float bucket = floor(tb);
     float inBucket = fract(tb) * FLASH_PERIOD;
+    float era = floor(uTime / 20.0);
     vec2 base = floor(uv * FLASH_GRID);
-    float chance = FLASH_CHANCE * storm * exp(-(lat * lat) / (0.5 * 0.5)); // tropics: lat in radians
-    float light = 0.0;
-    for (int j = -1; j <= 1; j++) {
-        for (int i = -1; i <= 1; i++) {
+    float chance = FLASH_CHANCE * uFlashRate * storm * exp(-(lat * lat) / (0.5 * 0.5)); // tropics: lat in radians
+    float cosLat = max(cos(lat), 0.2);
+    vec2 light = vec2(0.0);
+    for (int j = -2; j <= 2; j++) {
+        for (int i = -2; i <= 2; i++) {
             vec2 cell = base + vec2(float(i), float(j));
             vec2 id = vec2(mod(cell.x, FLASH_GRID.x), cell.y);
             float h = hash12(id * 0.731 + vec2(bucket * 1.913, 7.31));
-            if (h > chance) continue;
-            float start = hash12(id * 1.37 + vec2(bucket * 0.577, 3.1)) * (FLASH_PERIOD - 0.5);
-            float since = inBucket - start;
-            if (since < 0.0) continue;
-            float envelope = exp(-since / 0.11) + 0.6 * exp(-max(since - 0.17, 0.0) / 0.09) * step(0.17, since);
-            vec2 centre = (cell + vec2(hash12(id + 11.1), hash12(id + 23.7))) / FLASH_GRID;
-            float cosLat = max(cos(lat), 0.2);
-            vec2 delta = vec2((uv.x - centre.x) * 2.0 * PI * cosLat, (uv.y - centre.y) * PI);
-            float sigma = 0.010 + 0.006 * hash12(id + 41.9);
-            light += envelope * exp(-0.5 * dot(delta, delta) / (sigma * sigma));
+            if (h > chance * 2.5) continue; // the quick test first: most cells never flash
+            float busy = hash12(floor(id / 4.0) * 0.37 + vec2(era * 2.17, 5.3)) > 0.6 ? 2.5 : 0.15; // about 1 in 3 patches is active
+            if (h > chance * busy) continue;
+            float start = hash12(id * 1.37 + vec2(bucket * 0.577, 3.1)) * (FLASH_PERIOD - 0.7);
+            vec2 centre0 = (cell + vec2(hash12(id + 11.1), hash12(id + 23.7))) / FLASH_GRID;
+            float size = 0.010 + 0.006 * hash12(id + 41.9);
+            for (int k = 0; k < 3; k++) { // up to three strokes, each a little weaker and apart from the one before
+                float since = inBucket - start - float(k) * (0.07 + 0.05 * hash12(id + float(k) * 5.1));
+                if (since < 0.0) continue;
+                float envelope = exp(-since / 0.09) * (1.0 - 0.3 * float(k));
+                vec2 centre = centre0 + 0.35 * (vec2(hash12(id + float(k) * 7.7), hash12(id + float(k) * 3.3)) - 0.5) / FLASH_GRID;
+                vec2 delta = vec2((uv.x - centre.x) * 2.0 * PI * cosLat, (uv.y - centre.y) * PI);
+                float d2 = dot(delta, delta);
+                light.x += envelope * exp(-0.5 * d2 / (size * size));
+                light.y += envelope * exp(-0.5 * d2 / (2.25 * size * size)); // 1.5 x wider
+            }
         }
     }
     return light;
@@ -528,7 +595,8 @@ void main() {
     if (covH > 0.0) { // the planet or its cloud shells: the other 70 % of the screen is sky and skips all of this
         vec3 day = fetch(uDay, uvE, gE).rgb;
         vec4 topo = fetch(uTopo, uvE, gE);
-        float landBias = (1.0 - topo.a) * clamp(textureLod(uClouds, uvC, 6.0).r - LAND_COLD_BASELINE, 0.0, 0.5) * LAND_COLD_BIAS;
+        float landShare = 1.0 - topo.a; // the fetch is only needed over land
+        float landBias = landShare > 0.0 ? landShare * clamp(textureLod(uClouds, uvC, 6.0).r - LAND_COLD_BASELINE, 0.0, 0.5) * LAND_COLD_BIAS : 0.0;
 
         // City lights and cloud edges go through thresholds, so single points pop in and out as they cross pixels at
         // 10 fps. Four samples per pixel (rotated grid), thresholded one by one and then averaged, keep the full sharpness.
@@ -548,6 +616,14 @@ void main() {
                 lightLuma += max(dot(textureGrad(uNight, uvE + gE.dx * o.x + gE.dy * o.y, gE.dx, gE.dy).rgb, LUMA) - 0.02, 0.0);
             }
             lightLuma *= tapWeight;
+        }
+        // The glow of the cities: light scattered in the haze and the clouds above them, a soft warm dome around every bright
+        // place. The night map seen through two wide blurs (50 and 200 km at the ground, whatever the resolution).
+        float cityGlow = 0.0;
+        if (nightness > 0.0 && (uSkip & SKIP_LIGHTS) == 0) {
+            float w1 = max(0.0044 / uPixelAngle, 2.0), w2 = max(0.017 / uPixelAngle, 6.0);
+            cityGlow = 0.6 * dot(textureGrad(uNight, uvE, gE.dx * w1, gE.dy * w1).rgb, LUMA)
+                     + 0.4 * dot(textureGrad(uNight, uvE, gE.dx * w2, gE.dy * w2).rgb, LUMA);
         }
 
         // Clouds and their shadow. A coarse look first (clear sky stays at zero). Then one fine sample: where it agrees with
@@ -616,11 +692,11 @@ void main() {
         float horizonM = smoothstep(-0.015, 0.06, ndlM);
         vec3 moonE = MOON_COLOR * uMoonPhase;
         float lumaDay = dot(day, vec3(0.2126, 0.7152, 0.0722));
-        ground += moonE * (max(dot(Nb, M), 0.0) * horizonM) * (0.25 + 2.5 * lumaDay)
-                + vec3(0.5, 0.6, 0.75) * uMoonPhase * (0.12 * ggxSpec(N, M, V) * topo.a * horizonM) // silvery glint
+        ground += moonE * (max(dot(Nb, M), 0.0) * horizonM) * (0.25 + 1.2 * lumaDay)
+                + vec3(0.5, 0.6, 0.75) * uMoonPhase * (0.02 * ggxSpec(N, M, V) * topo.a * horizonM) // a faint silvery glint of the Moon on the sea
                 + AIRGLOW;
 
-        vec3 city = lightLuma * vec3(1.0, 0.70, 0.36) * 5.0 * nightness;
+        vec3 city = lightLuma * vec3(1.0, 0.70, 0.36) * 5.0 * nightness + cityGlow * vec3(1.0, 0.58, 0.26) * (CITY_GLOW_GAIN * nightness);
         ground += city;
 
         // ---- clouds: lit from the shell, so they stay lit past the ground terminator (twilight) ----
@@ -645,9 +721,16 @@ void main() {
                       + AIRGLOW * 1.5
                       + city * 0.3);
         // lightning lights up the cloud deck from inside: only at night and only in big decks of the tropics
-        if ((uSkip & SKIP_LIGHTNING) == 0 && nightness > 0.3 && alphaC > 0.25 && abs(nC.y) < 0.6) {
+        if ((uSkip & SKIP_LIGHTNING) == 0 && nightness > 0.3 && alphaC > 0.05 && abs(nC.y) < 0.6) {
             float storm = smoothstep(0.35, 0.8, textureLod(uClouds, uvC, 5.0).r);
-            if (storm > 0.0) cloudRad += vec3(1.0, 0.92, 0.8) * (FLASH_GAIN * lightning(uvC, storm, asin(nC.y)) * (0.4 + 0.6 * cloudCover) * nightness);
+            if (storm > 0.0) {
+                vec2 flash = lightning(uvC, storm, asin(nC.y));
+                // soft clipping so that overlapping strokes do not burn a flat white patch; the light shows the thickness of the
+                // cloud (bright where it is deep) and fades out with the cloud's edge
+                vec3 flashColour = vec3(1.0, 0.92, 0.8) * flash.x + vec3(0.62, 0.72, 1.0) * (0.35 * flash.y);
+                float depth = mix(0.3, 1.0, smoothstep(0.3, 1.0, cloudCover)) * smoothstep(0.05, 0.5, alphaC);
+                cloudRad += (1.0 - exp(-0.8 * flashColour)) * (FLASH_GAIN * depth * nightness);
+            }
         }
 
         // ---- cirrus: thin streaks high above the clouds, with a parallax of their own ----
@@ -688,7 +771,8 @@ void main() {
 #else
         vec3 stars = (uSkip & SKIP_STARS) == 0 ? starfield(dirCel, limb) * uStarGain : vec3(0.0);
 #endif
-        vec3 backdrop = milky + stars;
+        // faint stars close to the limb and behind the glow band are weaker, only well above it they shine fully
+        vec3 backdrop = (milky + stars) * limbFade(dist);
         if ((uSkip & SKIP_SUN_MOON) != 0) {
             sky = backdrop * airT;
         } else if ((uSkip & SKIP_SUN_BLUR) != 0 || abs(uSkyBlur) < 1e-6) {
@@ -716,7 +800,7 @@ void main() {
     col = mix(col, cirrusTotal, alphaH * covH);
 
     if ((uSkip & SKIP_AURORA) == 0) col += aurora(ro, rd, tca, d2);
-    if ((uSkip & SKIP_UPPER_AIR) == 0) col += upperAtmosphere(ro, rd, tca, d2); // the emission shells in front of the planet's night side and along the limb
+    if ((uSkip & SKIP_UPPER_AIR) == 0) col += upperAtmosphere(ro, rd, tca, d2, fw); // the emission shells in front of the planet's night side and along the limb
 
 #ifdef HDR_OUT
     outColor = vec4(col, 1.0); // linear light; resolve.frag tone maps, encodes and dithers

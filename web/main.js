@@ -5,8 +5,8 @@
   // The same settings as the Android app (see project.json for the Wallpaper Engine properties that fill them).
   // fill: the Earth's diameter as a fraction of the screen height; starSigma and starLimit are compiled into the shader.
   const settings = {
-    fps: 30, scale: 1.0, fill: 0.9, starSigma: 0.7, starLimit: 9.0,
-    periodMinutes: 24, direction: 1, latitude: 21.4, starGain: 1, cloudSpeed: 100, cloudDirection: 1,
+    fps: 30, scale: 1.0, fill: 0.9, starSigma: 0.7, starLimit: 10.0,
+    periodMinutes: 24, direction: 1, latitude: 21.4, starGain: 1, flashRate: 1, cloudSpeed: 100, cloudDirection: 1,
     off: {}, // effect name -> true while the effect is switched off
   };
   // SKIP_* bits of earth.frag for the effects that can be switched off
@@ -26,6 +26,8 @@
   const canvas = document.getElementById('c');
   const status = document.getElementById('status');
   const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, stencil: false, powerPreference: 'high-performance' });
+  let paused = false;
+  canvas.addEventListener('webglcontextlost', () => location.reload()); // after a driver reset or a GPU switch: start over instead of staying black
   const say = (t) => { status.textContent = t; status.style.display = t ? 'block' : 'none'; };
   if (!gl || !gl.getExtension('EXT_color_buffer_float')) { say('WebGL2 with float render targets is required.'); return; }
   const parallel = gl.getExtension('KHR_parallel_shader_compile');
@@ -168,22 +170,27 @@
     gl.activeTexture(gl.TEXTURE0 + UNIT.hdr);
     gl.bindTexture(gl.TEXTURE_2D, hdrTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.R11F_G11F_B10F, w, h, 0, gl.RGB, gl.UNSIGNED_INT_10F_11F_11F_REV, null);
-    exact(gl.TEXTURE_2D);
+    linearClamp(gl.TEXTURE_2D); // the resolve pass averages (render scale above 1) or smooths (below 1) the buffer
     hdrFbo = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, hdrFbo);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, hdrTex, 0);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
-  let width = 0, height = 0, tanX = 0, tanY = 0, dist = 0;
+  // The canvas has the screen's size; the scene is drawn into a buffer of width x height (screen x render scale, up to 2 =
+  // supersampling) and the resolve pass brings it to the canvas.
+  let width = 0, height = 0, screenW = 0, screenH = 0, tanX = 0, tanY = 0, dist = 0;
   function resize() {
     const dpr = params.has('w') ? 1 : window.devicePixelRatio || 1;
-    const w = params.has('w') ? +params.get('w') : Math.floor(window.innerWidth * dpr * settings.scale);
-    const h = params.has('h') ? +params.get('h') : Math.floor(window.innerHeight * dpr * settings.scale);
-    if (w === width && h === height) return;
-    width = canvas.width = Math.max(w, 2);
-    height = canvas.height = Math.max(h, 2);
-    if (params.has('w')) { canvas.style.width = width + 'px'; canvas.style.height = height + 'px'; }
+    const sw = Math.max(params.has('w') ? +params.get('w') : Math.floor(window.innerWidth * dpr), 2);
+    const sh = Math.max(params.has('h') ? +params.get('h') : Math.floor(window.innerHeight * dpr), 2);
+    const w = Math.max(Math.round(sw * settings.scale), 2), h = Math.max(Math.round(sh * settings.scale), 2);
+    if (sw === screenW && sh === screenH && w === width && h === height) return;
+    screenW = canvas.width = sw;
+    screenH = canvas.height = sh;
+    width = w;
+    height = h;
+    if (params.has('w')) { canvas.style.width = sw + 'px'; canvas.style.height = sh + 'px'; }
     createTarget(width, height);
     dist = DISTANCE;
     // the silhouette spans `fill` of the height, or of the width on a screen that is taller than wide
@@ -228,6 +235,7 @@
     gl.uniform1f(loc(progScene, 'uCloudShift'), cloudShift(sec));
     gl.uniform1i(loc(progScene, 'uSkip'), skipMask());
     gl.uniform1f(loc(progScene, 'uStarGain'), settings.starGain);
+    gl.uniform1f(loc(progScene, 'uFlashRate'), settings.flashRate);
     gl.uniform1f(loc(progScene, 'uSkyBlur'), cameraTurn(s.jd, dist, period));
     gl.uniform1f(loc(progScene, 'uAuroraPhase'), (sec % 120) / 120);
     gl.uniform1f(loc(progScene, 'uTime'), sec % 3600);
@@ -241,25 +249,48 @@
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, screenW, screenH);
     gl.useProgram(progResolve);
-    gl.uniform2f(loc(progResolve, 'uScreen'), width, height);
+    gl.uniform2f(loc(progResolve, 'uScreen'), screenW, screenH);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  let sources, builtK = 0;
+  // Stars: a monitor pixel is several times bigger than the phone's, so the same width in pixels looks blurry and the
+  // faint stars crowd the sky; sharper points and a magnitude limit bring the phone's look. The picture covers the same
+  // field of view at any resolution, so a star keeps its angular size (starSigma is for 1440 px of height of the buffer) and
+  // brightness; points narrower than 0.6 px would flicker, those keep the width and give up peak brightness to keep their light.
+  function sceneProgram() {
+    const k = builtK = height / 1440;
+    const sigma = Math.max(settings.starSigma * k, 0.6);
+    const defines = '#define HDR_OUT\n#define STAR_SIGMA_BASE ' + sigma.toFixed(3) + '\n#define STAR_FLUX_SIGMA ' + (sigma / k).toFixed(3) +
+      '\n#define STAR_MAG_LIMIT ' + settings.starLimit.toFixed(1) + '\n';
+    return program(sources.vs, sources.fs.replace(/#version 300 es\r?\n/, '#version 300 es\n' + defines), 'earth.frag');
+  }
+  function sceneUniforms() {
+    gl.useProgram(progScene);
+    const samplers = { uDay: 0, uNight: 1, uTopo: 2, uClouds: 3, uSkyCells: 4, uSkyStars: 5, uMilky: 6, uStarColors: 7, uMoon: 8, uTransmittance: 10, uScatR: 11, uScatM: 12, uScatMS: 13 };
+    for (const n in samplers) gl.uniform1i(loc(progScene, n), samplers[n]);
+    gl.uniform1f(loc(progScene, 'uDither'), 1 / 255);
+  }
+  let rebuilding = false;
+  async function rebuildScene() { // the star width is compiled in: a new render scale needs it again
+    if (rebuilding || !progScene || Math.abs(height / 1440 / builtK - 1) < 0.05) return;
+    rebuilding = true;
+    try {
+      const next = await ready(sceneProgram());
+      gl.deleteProgram(progScene);
+      progScene = next;
+      sceneUniforms();
+    } finally { rebuilding = false; }
   }
 
   async function start() {
     say('Loading Earth Live ...');
     resize();
-    // Stars: a monitor pixel is several times bigger than the phone's, so the same width in pixels looks blurry and the
-    // faint stars crowd the sky; sharper points and a magnitude limit bring the phone's look. The picture covers the same
-    // field of view at any resolution, so a star keeps its angular size (starSigma is for 1440 px of height) and brightness;
-    // points narrower than 0.6 px would flicker, those keep the width and give up peak brightness to keep their light.
-    const k = height / 1440;
-    const sigma = Math.max(settings.starSigma * k, 0.6);
-    const defines = '#define HDR_OUT\n#define STAR_SIGMA_BASE ' + sigma.toFixed(3) + '\n#define STAR_FLUX_SIGMA ' + (sigma / k).toFixed(3) +
-      '\n#define STAR_MAG_LIMIT ' + settings.starLimit.toFixed(1) + '\n';
-    const [vs, fs, rs, ...rest] = await Promise.all([shader('earth.vert'), shader('earth.frag'), shader('resolve.frag')]);
-    const withDefines = (src) => src.replace(/#version 300 es\r?\n/, '#version 300 es\n' + defines);
-    const pScene = program(vs, withDefines(fs), 'earth.frag');
+    const [vs, fs, rs] = await Promise.all([shader('earth.vert'), shader('earth.frag'), shader('resolve.frag')]);
+    sources = { vs, fs };
+    const pScene = sceneProgram();
     const pResolve = program(vs, rs, 'resolve.frag');
 
     const day = Astro.month(fixedMs || Date.now());
@@ -275,11 +306,8 @@
     say('Compiling the shader (once, can take a little while) ...');
     progScene = await ready(pScene);
     progResolve = await ready(pResolve);
+    sceneUniforms();
 
-    gl.useProgram(progScene);
-    const samplers = { uDay: 0, uNight: 1, uTopo: 2, uClouds: 3, uSkyCells: 4, uSkyStars: 5, uMilky: 6, uStarColors: 7, uMoon: 8, uTransmittance: 10, uScatR: 11, uScatM: 12, uScatMS: 13 };
-    for (const n in samplers) gl.uniform1i(loc(progScene, n), samplers[n]);
-    gl.uniform1f(loc(progScene, 'uDither'), 1 / 255);
     gl.useProgram(progResolve);
     gl.uniform1i(loc(progResolve, 'uHdr'), UNIT.hdr);
     gl.uniform1f(loc(progResolve, 'uP3'), 0);
@@ -291,6 +319,7 @@
     let last = -1e9;
     function frame(t) {
       requestAnimationFrame(frame);
+      if (paused || document.hidden) return; // Wallpaper Engine pauses (setPaused) when another window covers the wallpaper
       if (t - last < 1000 / settings.fps - 2) return; // frame limiter
       last = t;
       resize();
@@ -323,12 +352,13 @@
   const num = (v) => (typeof v === 'number' ? v : parseFloat(v));
   const handlers = {
     fps: (v) => { settings.fps = num(v); },
-    renderscale: (v) => { settings.scale = num(v); resize(); },
+    renderscale: (v) => { settings.scale = num(v); resize(); rebuildScene(); },
     earthsize: (v) => { settings.fill = num(v) / 100; width = 0; resize(); }, // width = 0 forces the geometry to be redone
     orbitminutes: (v) => { settings.periodMinutes = num(v); },
     orbitdirection: (v) => { settings.direction = String(v) === '1' ? -1 : 1; },
     latitude: (v) => { settings.latitude = num(v); },
     starbrightness: (v) => { settings.starGain = num(v) / 100; },
+    lightningrate: (v) => { settings.flashRate = num(v) / 100; },
     cloudspeed: (v) => { settings.cloudSpeed = num(v); },
     clouddirection: (v) => { settings.cloudDirection = String(v) === '1' ? -1 : 1; },
   };
@@ -337,6 +367,7 @@
     applyUserProperties(p) {
       for (const k in p) if (handlers[k] && p[k] && p[k].value !== undefined) handlers[k](p[k].value);
     },
+    setPaused(isPaused) { paused = !!isPaused; },
   };
   // ?p.latitude=-40&p.aurora=false: the same properties from the address, for tests without Wallpaper Engine
   const fromUrl = {};

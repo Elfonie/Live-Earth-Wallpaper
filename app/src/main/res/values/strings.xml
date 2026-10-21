@@ -48,6 +48,8 @@
     <string name="fps_hint">5 fps is the most frugal (the motion is slow, but steps are visible), 10 fps is smooth enough for most. Higher is smoother and costs noticeably more power.</string>
     <string name="stars">Star brightness</string>
     <string name="stars_hint">How bright the stars are; they are always drawn as sharp points.</string>
+    <string name="lightning_rate">Lightning frequency</string>
+    <string name="lightning_rate_hint">How often the storms flash. 100 % is the normal rate, 500 % is a lot more. Only has an effect while Lightning is on.</string>
     <string name="cloud_speed">Cloud speed</string>
     <string name="cloud_speed_hint">100 % means the clouds go once around the Earth in one hour, 0 % holds them still, 300 % is three times faster.</string>
     <string name="cloud_direction">Cloud direction</string>

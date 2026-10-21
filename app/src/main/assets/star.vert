@@ -47,5 +47,5 @@ void main() {
     float limb = 1.0 - pow(air.g, 1.5);
     float flicker = 1.0 + (FLICKER_BASE + FLICKER_LIMB * limb) * twinkle(aTintSeed.y);
     vec3 tint = texelFetch(uStarColors, ivec2(int(aTintSeed.x), 0), 0).rgb;
-    vColour = tint * starPeak(mag) * flicker * air * uStarGain * (sigma * sigma) / (s * s);
+    vColour = tint * starPeak(mag) * flicker * air * uStarGain * (sigma * sigma) / (s * s) * limbFade(sqrt(max(dot(uCamPos, uCamPos) - rayTca * rayTca, 0.0)));
 }

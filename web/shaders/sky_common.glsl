@@ -15,7 +15,11 @@ const float STAR_FALLOFF = 0.16;
 #endif
 const float STAR_PEAK_GAIN = 2.6 * (1.2 / STAR_FLUX_SIGMA) * (1.2 / STAR_FLUX_SIGMA); // a sharper star keeps its total light
 const float STAR_SIGMA = STAR_SIGMA_BASE; // point spread width in pixels for faint stars; bright ones bloom
-const float FLICKER_BASE = 0.05;  // everywhere, purely cosmetic: there is no scintillation above the atmosphere
+// Starlight is dimmed on its way through the lower air at the limb (scaled up like the airglow): below this closest-approach
+// distance (Earth radii) faint stars and the Milky Way fade to 12 %; used by earth.frag (per-pixel stars, Milky Way) and star.vert
+const float LIMB_FADE_TOP = 1.0187;
+float limbFade(float closestApproach) { return mix(0.12, 1.0, smoothstep(1.0, LIMB_FADE_TOP, closestApproach)); }
+const float FLICKER_BASE = 0.0;   // none above the atmosphere: stars in clear space shine steadily
 const float FLICKER_LIMB = 0.45;  // extra for stars seen through the limb, where it is physical
 const float FLICKER_RATE = 7.0;   // noise lattice cells per second
 

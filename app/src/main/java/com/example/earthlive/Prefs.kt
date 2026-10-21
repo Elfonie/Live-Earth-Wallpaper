@@ -15,6 +15,7 @@ object Prefs {
     const val CLOUD_SPEED = "cloud_speed_percent" // 0..300; 100 = the clouds go once around the Earth in an hour
     const val CLOUD_DIRECTION = "cloud_direction" // 0 towards the east (as in reality), 1 towards the west
     const val ORBIT_DIRECTION = "orbit_direction" // 0: the surface moves from left to right (the Earth's own turning), 1: the other way
+    const val LIGHTNING_RATE = "lightning_rate"   // percent, 25..500: how often the lightning flashes; 100 = as designed
     const val LAST_ERROR = "last_error"
 
     const val DEFAULT_SIZE = 92
@@ -24,6 +25,7 @@ object Prefs {
     const val DEFAULT_FPS = 10
     const val DEFAULT_RENDER_SCALE = 100
     const val DEFAULT_CLOUD_SPEED = 100
+    const val DEFAULT_LIGHTNING_RATE = 100
     val FPS_CHOICES = intArrayOf(5, 10, 20, 30)
     const val CLOUD_LAP_SECONDS = 3600.0 // at 100 %
 
@@ -38,6 +40,7 @@ object Prefs {
         val periodSeconds: Double,
         val latitudeDeg: Double,
         val starGain: Float,
+        val flashRate: Float,
         val fps: Int,
         val renderScale: Double,
         val cloudRate: Double, // laps per CLOUD_LAP_SECONDS; negative: towards the west; 0: still
@@ -54,6 +57,7 @@ object Prefs {
         periodSeconds = prefs.getInt(ORBIT_MINUTES, DEFAULT_ORBIT).coerceIn(6, 120) * 60.0,
         latitudeDeg = prefs.getFloat(LATITUDE, DEFAULT_LATITUDE).coerceIn(-60f, 60f).toDouble(),
         starGain = prefs.getInt(STAR_BRIGHTNESS, DEFAULT_STARS).coerceIn(25, 150) / 100f,
+        flashRate = prefs.getInt(LIGHTNING_RATE, DEFAULT_LIGHTNING_RATE).coerceIn(25, 500) / 100f,
         fps = prefs.getInt(FPS, DEFAULT_FPS).takeIf { it in FPS_CHOICES } ?: DEFAULT_FPS,
         renderScale = prefs.getInt(RENDER_SCALE, DEFAULT_RENDER_SCALE).coerceIn(50, 100) / 100.0,
         cloudRate = prefs.getInt(CLOUD_SPEED, DEFAULT_CLOUD_SPEED).coerceIn(0, 300) / 100.0 * (if (prefs.getInt(CLOUD_DIRECTION, 0) == 1) -1 else 1),
@@ -63,7 +67,7 @@ object Prefs {
 
     fun reset(prefs: SharedPreferences) {
         prefs.edit().apply {
-            listOf(EARTH_SIZE, ORBIT_MINUTES, ORBIT_DIRECTION, LATITUDE, STAR_BRIGHTNESS, FPS, RENDER_SCALE, CLOUD_SPEED, CLOUD_DIRECTION, "cloud_speed").plus(FEATURES.keys).forEach(::remove)
+            listOf(EARTH_SIZE, ORBIT_MINUTES, ORBIT_DIRECTION, LATITUDE, STAR_BRIGHTNESS, LIGHTNING_RATE, FPS, RENDER_SCALE, CLOUD_SPEED, CLOUD_DIRECTION, "cloud_speed").plus(FEATURES.keys).forEach(::remove)
         }.apply()
     }
 

@@ -31,6 +31,7 @@ class EarthRenderer(
     private var periodSeconds = OrbitCamera.PERIOD_SECONDS
     private var renderScale = 1.0 // the picture is drawn at this fraction of the screen's size and stretched
     private var starGain = 1f
+    private var flashRate = 1f
     private var cloudRate = 1.0
     private var orbitDirection = 1
     private var frameSeconds = 0.1 // the exposure of the Sun and Moon motion blur: one frame
@@ -115,6 +116,7 @@ class EarthRenderer(
         periodSeconds = v.periodSeconds
         featureMask = v.skipMask
         starGain = v.starGain
+        flashRate = v.flashRate
         cloudRate = v.cloudRate
         frameSeconds = 1.0 / v.fps
         orbitDirection = v.orbitDirection
@@ -179,6 +181,7 @@ class EarthRenderer(
         GLES30.glUniformMatrix3fv(loc("uSkyRot"), 1, false, SkyFrame.toUniform(SkyFrame.earthFixedToSky(jd, pose)), 0)
         GLES30.glUniform1f(loc("uCloudShift"), cloudShift(nowMs))
         GLES30.glUniform1f(loc("uStarGain"), starGain)
+        GLES30.glUniform1f(loc("uFlashRate"), flashRate)
         GLES30.glUniform1f(loc("uSkyBlur"), cameraTurn(orbit, jd).toFloat())
         GLES30.glUniform1i(loc("uSkip"), skipMask or featureMask)
         GLES30.glUniform1f(loc("uAuroraPhase"), ((nowMs / 1000.0) % AURORA_PERIOD_SECONDS / AURORA_PERIOD_SECONDS).toFloat())

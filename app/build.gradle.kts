@@ -13,8 +13,8 @@ android {
         applicationId = "com.example.earthlive"
         minSdk = 26 // java.time, GLES 3.0
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
         (project.findProperty("appIdSuffix") as String?)?.let { applicationIdSuffix = it } // ./gradlew assembleRelease -PappIdSuffix=.test: installs next to the real app
     }
 
