@@ -69,6 +69,15 @@ object SkyFrame {
         }
     }
 
+    /**
+     * Row-major 3x3 matrix of the real sky: an Earth-fixed ray to its celestial direction (the transpose of [Astronomy.earthRotation]).
+     * The stars then stand in space like the Moon and the Sun and the camera's orbit pans them, instead of the slow drift of [earthFixedToSky].
+     */
+    fun inertial(jd: Double): DoubleArray {
+        val e = Astronomy.earthRotation(jd)
+        return DoubleArray(9) { e[(it % 3) * 3 + it / 3] }
+    }
+
     /** The same matrix in column-major order, which is what glUniformMatrix3fv reads. */
     fun toUniform(rowMajor: DoubleArray) = FloatArray(9) { rowMajor[(it % 3) * 3 + it / 3].toFloat() }
 }

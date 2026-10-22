@@ -25,9 +25,47 @@ class OrbitCameraTest {
     }
 
     @Test
+    fun aNewPeriodKeepsTheCameraWhereItIs() {
+        val old = OrbitCamera(distance, OrbitCamera.LATITUDE_DEG, 24 * 60.0)
+        val next = OrbitCamera(distance, OrbitCamera.LATITUDE_DEG, 7 * 60.0, direction = -1)
+        next.phase = old.angle(start) - next.angle(start) // what EarthRenderer.buildCamera does
+        val a = old.inertialPosition(start)
+        val b = next.inertialPosition(start)
+        for (i in 0..2) assertEquals(a[i], b[i], 1e-9)
+        assertTrue("and then it flies at the new rate", old.inertialPosition(start + 1 / 1440.0)[1] != next.inertialPosition(start + 1 / 1440.0)[1])
+    }
+
+    @Test
+    fun aPoseAtAnotherLatitudeIsTheOneOfACameraThere() {
+        // the stars are placed with the pose at the default latitude, whatever latitude the camera has
+        val high = OrbitCamera(distance, 60.0)
+        val there = high.pose(start, OrbitCamera.LATITUDE_DEG)
+        val own = OrbitCamera(distance, OrbitCamera.LATITUDE_DEG).pose(start)
+        for (i in 0..2) {
+            assertEquals(own.position[i], there.position[i], 1e-9)
+            assertEquals(own.up[i], there.up[i], 1e-9)
+        }
+        assertTrue("and the camera's own latitude is kept", high.pose(start).position[1] > there.position[1])
+    }
+
+    @Test
     fun distanceStaysConstantOverTheWholeOrbit() {
         for (minute in 0 until 600 step 7) {
             assertEquals(distance, length(camera.pose(start + minute / 1440.0).position), 1e-9)
+        }
+    }
+
+    @Test
+    fun theOrbitSpeedFollowsTheSettingsPeriod() {
+        // the camera turns 360 degrees per period about the polar axis; seen from the Earth's centre its position moves by
+        // that angle times cos(latitude), plus or minus the Earth's own turning (0.0042 degrees per second, times cos(latitude))
+        for (minutes in intArrayOf(1, 6, 12, 24, 60, 120, 240)) {
+            val orbit = OrbitCamera(distance, OrbitCamera.LATITUDE_DEG, minutes * 60.0)
+            val a = orbit.pose(start).position
+            val b = orbit.pose(start + 10.0 / 86400.0).position
+            val degreesPerSecond = Math.toDegrees(kotlin.math.acos(dot(a, b) / (length(a) * length(b)))) / 10.0
+            val expected = 360.0 / (minutes * 60.0) * kotlin.math.cos(Math.toRadians(OrbitCamera.LATITUDE_DEG))
+            assertEquals("period $minutes min", expected, degreesPerSecond, expected * 0.03 + 0.0042)
         }
     }
 

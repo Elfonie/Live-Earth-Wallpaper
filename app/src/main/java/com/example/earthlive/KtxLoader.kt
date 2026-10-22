@@ -5,11 +5,15 @@ import android.opengl.GLES30
 import java.nio.ByteOrder
 import kotlin.math.max
 
-/** Uploads a KTX1 file with ASTC-compressed mip levels (as written by tools/make_textures.py) to texture unit `unit`. */
+/**
+ * Uploads a KTX1 file with ASTC-compressed mip levels (as written by tools/make_textures.py) to texture unit `unit`.
+ * `skip` leaves out that many of the biggest levels: the texture then has half the width and height per level skipped
+ * (a quarter of the memory), from the same file. Levels bigger than the GPU's largest texture are left out too.
+ */
 object KtxLoader {
     private const val GL_TEXTURE_MAX_ANISOTROPY_EXT = 0x84FE
 
-    fun load(context: Context, asset: String, unit: Int): Int {
+    fun load(context: Context, asset: String, unit: Int, skip: Int = 0): Int {
         val extensions = GLES30.glGetString(GLES30.GL_EXTENSIONS).orEmpty()
         check("GL_KHR_texture_compression_astc_ldr" in extensions) { "ASTC LDR is not supported by this GPU" }
 
@@ -28,15 +32,22 @@ object KtxLoader {
         val id = IntArray(1).also { GLES30.glGenTextures(1, it, 0) }[0]
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0 + unit)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, id)
+        val maxSize = IntArray(1).also { GLES30.glGetIntegerv(GLES30.GL_MAX_TEXTURE_SIZE, it, 0) }[0]
+        var first = skip.coerceIn(0, levels - 1)
+        while (width shr first > maxSize && first < levels - 1) first++ // a GPU that cannot hold the 8k maps gets them at 4k
         for (level in 0 until levels) {
             val size = data.getInt(offset)
             offset += 4
+            if (level < first) {
+                offset += (size + 3) and 3.inv()
+                continue
+            }
             val slice = data.duplicate().order(ByteOrder.LITTLE_ENDIAN).apply {
                 position(offset)
                 limit(offset + size)
             }
             GLES30.glCompressedTexImage2D(
-                GLES30.GL_TEXTURE_2D, level, format,
+                GLES30.GL_TEXTURE_2D, level - first, format,
                 max(1, width shr level), max(1, height shr level), 0, size, slice,
             )
             offset += (size + 3) and 3.inv()

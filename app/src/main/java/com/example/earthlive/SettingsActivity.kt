@@ -33,7 +33,7 @@ class SettingsActivity : Activity() {
         val picture = Ui.card(this)
         picture.addView(slider(R.string.earth_size, R.string.earth_size_hint, 70, 100, 1, prefs.getInt(Prefs.EARTH_SIZE, Prefs.DEFAULT_SIZE), { "$it %" }) { prefs.edit().putInt(Prefs.EARTH_SIZE, it).apply() })
         picture.addView(Ui.divider(this))
-        picture.addView(slider(R.string.orbit, R.string.orbit_hint, 6, 120, 1, prefs.getInt(Prefs.ORBIT_MINUTES, Prefs.DEFAULT_ORBIT), { getString(R.string.minutes, it) }) { prefs.edit().putInt(Prefs.ORBIT_MINUTES, it).apply() })
+        picture.addView(slider(R.string.orbit, R.string.orbit_hint, 1, 120, 1, prefs.getInt(Prefs.ORBIT_MINUTES, Prefs.DEFAULT_ORBIT), { getString(R.string.minutes, it) }) { prefs.edit().putInt(Prefs.ORBIT_MINUTES, it).apply() })
         picture.addView(Ui.divider(this))
         picture.addView(Ui.text(this, getString(R.string.orbit_direction), 16f, R.color.text, bold = true))
         picture.addView(Ui.body(this, getString(R.string.orbit_direction_hint)), Ui.lp(this, 4))
@@ -45,6 +45,13 @@ class SettingsActivity : Activity() {
         picture.addView(slider(R.string.latitude, R.string.latitude_hint, -60, 60, 1, prefs.getFloat(Prefs.LATITUDE, Prefs.DEFAULT_LATITUDE).roundToInt(), { latitudeText(it) }) { prefs.edit().putFloat(Prefs.LATITUDE, it.toFloat()).apply() })
         picture.addView(Ui.divider(this))
         picture.addView(slider(R.string.stars, R.string.stars_hint, 25, 150, 5, prefs.getInt(Prefs.STAR_BRIGHTNESS, Prefs.DEFAULT_STARS), { "$it %" }) { prefs.edit().putInt(Prefs.STAR_BRIGHTNESS, it).apply() })
+        picture.addView(Ui.divider(this))
+        picture.addView(Ui.text(this, getString(R.string.sky_motion), 16f, R.color.text, bold = true))
+        picture.addView(Ui.body(this, getString(R.string.sky_motion_hint)), Ui.lp(this, 4))
+        picture.addView(
+            choice(listOf(R.string.sky_drift, R.string.sky_real).map(::getString), { prefs.getInt(Prefs.SKY_MOTION, 0) }) { prefs.edit().putInt(Prefs.SKY_MOTION, it).apply() },
+            Ui.lp(this, 14),
+        )
         column.addView(picture)
 
         column.addView(Ui.sectionLabel(this, getString(R.string.section_details)))
@@ -56,6 +63,8 @@ class SettingsActivity : Activity() {
             Triple("aurora", R.string.aurora, R.string.aurora_hint),
             Triple("airglow", R.string.airglow, R.string.airglow_hint),
             Triple("lightning", R.string.lightning, R.string.lightning_hint),
+            Triple("sun", R.string.sun, R.string.sun_hint),
+            Triple("moon", R.string.moon, R.string.moon_hint),
         )
         rows.forEach { (key, title, hint) ->
             details.addView(toggle(key, title, hint))
@@ -83,6 +92,20 @@ class SettingsActivity : Activity() {
         )
         performance.addView(Ui.divider(this))
         performance.addView(slider(R.string.render_scale, R.string.render_scale_hint, 50, 100, 5, prefs.getInt(Prefs.RENDER_SCALE, Prefs.DEFAULT_RENDER_SCALE), { "$it %" }) { prefs.edit().putInt(Prefs.RENDER_SCALE, it).apply() })
+        performance.addView(Ui.divider(this))
+        performance.addView(Ui.text(this, getString(R.string.effect_quality), 16f, R.color.text, bold = true))
+        performance.addView(Ui.body(this, getString(R.string.effect_quality_hint)), Ui.lp(this, 4))
+        performance.addView(
+            choice(listOf(R.string.quality_high, R.string.quality_medium, R.string.quality_low).map(::getString), { Prefs.read(prefs).quality }) { prefs.edit().putInt(Prefs.EFFECT_QUALITY, it).apply() },
+            Ui.lp(this, 14),
+        )
+        performance.addView(Ui.divider(this))
+        performance.addView(Ui.text(this, getString(R.string.map_quality), 16f, R.color.text, bold = true))
+        performance.addView(Ui.body(this, getString(R.string.map_quality_hint)), Ui.lp(this, 4))
+        performance.addView(
+            choice(listOf(R.string.map_standard, R.string.map_low).map(::getString), { Prefs.read(prefs).mapSkip }) { prefs.edit().putInt(Prefs.MAP_QUALITY, it).apply() },
+            Ui.lp(this, 14),
+        )
         performance.addView(Ui.divider(this))
         performance.addView(toggle("sharp_clouds", R.string.sharp_clouds, R.string.sharp_clouds_hint))
         performance.addView(Ui.divider(this))

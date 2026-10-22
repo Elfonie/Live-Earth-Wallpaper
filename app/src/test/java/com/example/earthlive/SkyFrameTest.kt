@@ -19,6 +19,30 @@ class SkyFrameTest {
     private fun dot(a: DoubleArray, b: DoubleArray) = a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 
     @Test
+    fun theRealSkyPutsTheSunWhereItsRightAscensionSaysItIs() {
+        val t = jd("2026-03-10T12:00:00Z")
+        val sun = Astronomy.sunDirection(t)
+        val celestial = apply(SkyFrame.inertial(t), doubleArrayOf(sun.x, sun.y, sun.z))
+        val eq = Astronomy.sunEquatorial(t)
+        val ra = Math.toRadians(eq.raDeg)
+        val dec = Math.toRadians(eq.decDeg)
+        assertEquals(Math.cos(dec) * Math.cos(ra), celestial[0], 1e-9)
+        assertEquals(Math.cos(dec) * Math.sin(ra), celestial[1], 1e-9)
+        assertEquals(Math.sin(dec), celestial[2], 1e-9)
+    }
+
+    @Test
+    fun theRealSkyPansWithTheOrbit() {
+        // the point of the sky in the middle of the view moves on by the orbit's angle: 15 degrees a minute at 24 minutes a lap, times the cosine of the latitude for the direction of the view
+        val t0 = jd("2026-03-10T12:00:00Z")
+        val t1 = t0 + 60.0 / 86400.0
+        val c0 = apply(SkyFrame.inertial(t0), camera.pose(t0).forward)
+        val c1 = apply(SkyFrame.inertial(t1), camera.pose(t1).forward)
+        val degrees = Math.toDegrees(acos(dot(c0, c1).coerceIn(-1.0, 1.0)))
+        assertEquals(15.0 * Math.cos(Math.toRadians(OrbitCamera.LATITUDE_DEG)), degrees, 0.2)
+    }
+
+    @Test
     fun theViewStartsAlongTheMilkyWay() {
         val t = j2000 + 40 * period // a drift angle of zero again
         val pose = camera.pose(t)

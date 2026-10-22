@@ -61,8 +61,9 @@
 
   // Orbit camera (OrbitCamera.kt)
   const FOV_Y_DEG = 30, LATITUDE_DEG = 21.4, PERIOD_S = 24 * 60;
-  function orbitPose(jd, dist, latitudeDeg = LATITUDE_DEG, periodS = PERIOD_S, direction = 1) {
-    const u = direction * ((jd - J2000) * 86400 % periodS) / periodS * 2 * Math.PI;
+  const orbitAngle = (jd, periodS, direction, phase = 0) => direction * ((jd - J2000) * 86400 % periodS) / periodS * 2 * Math.PI + phase;
+  function orbitPose(jd, dist, latitudeDeg = LATITUDE_DEG, periodS = PERIOD_S, direction = 1, phase = 0) {
+    const u = orbitAngle(jd, periodS, direction, phase);
     const lat = latitudeDeg * rad;
     const inertial = [dist * Math.cos(lat) * Math.cos(u), -dist * Math.cos(lat) * Math.sin(u), dist * Math.sin(lat)];
     const gg = gmst(jd) * rad;
@@ -92,9 +93,18 @@
     return new Float32Array([m[0][0], m[1][0], m[2][0], m[0][1], m[1][1], m[2][1], m[0][2], m[1][2], m[2][2]]);
   }
 
+  // The real sky (an experiment): the celestial direction (x to the vernal equinox, z to the celestial pole) of an Earth-fixed ray. The
+  // stars then stand in space like the Moon and the Sun, and the camera's orbit pans them at the orbit's speed, instead of the slow
+  // drift that skyMatrix gives them. Column-major, for uniformMatrix3fv.
+  function skyMatrixInertial(jd) {
+    const g = gmst(jd) * rad, c = Math.cos(g), s = Math.sin(g);
+    return new Float32Array([c, s, 0, 0, 0, 1, s, -c, 0]);
+  }
+
   const ECLIPSE_COS = Math.cos(2.2 * rad);
   g.Astro = {
     FOV_Y_DEG,
+    LATITUDE_DEG,
     julianDate,
     // Everything the shader needs for one instant
     scene(ms) {
@@ -113,7 +123,9 @@
       };
     },
     orbitPose,
+    orbitAngle,
     skyMatrix,
+    skyMatrixInertial,
     distanceForFill(tanHalf, fill) { return 1 / Math.sin(Math.atan(fill * tanHalf)); },
     month(ms) { return new Date(ms).getUTCMonth() + 1; },
   };

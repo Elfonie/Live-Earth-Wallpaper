@@ -20,8 +20,11 @@ It works offline and asks for no permissions. A PC version for Wallpaper Engine 
   their colours, the Milky Way, zodiacal light and gegenschein.
 - **Ground**: the Blue Marble of the current month (snow line and vegetation follow the calendar), city lights at night,
   specular sea, relief on the clouds, a drifting 8k cloud layer, thin cirrus.
-- **Upper atmosphere**: aurora (curtains along the geomagnetic ovals, both poles), airglow, noctilucent clouds,
-  subtle lightning in night storms.
+- **Upper atmosphere**: aurora, airglow, noctilucent clouds, subtle lightning in night storms. The aurora follows the
+  geomagnetic ovals of both poles (the Feldstein-Starkov model at Kp 3: broad and bright at magnetic midnight, a thin band
+  towards the Sun) with curtains, arcs, rays, a faint diffuse glow, a slow pulse and a brightening near midnight; seen along the
+  limb it shows above the horizon, as on photos from the Space Station. The airglow is a soft green band that meets the edge of
+  the Earth without a step.
 - **Camera**: circles the Earth at a fixed latitude (21.4 N by default) in 24 minutes, so the surface slowly turns
   under it; the Earth fills 92 % of the screen width.
 - **Frugal by design**: a fixed low frame rate (10 fps by default), nothing runs while the screen is off, stars as point
@@ -32,7 +35,7 @@ It works offline and asks for no permissions. A PC version for Wallpaper Engine 
 Download the APK from the [Releases](../../releases) page, install it, open **Earth Live** and press
 **Set as live wallpaper** (or: long-press the home screen > Wallpapers & style > Live wallpapers > Earth Live).
 
-- Requirements: Android 8.0 or newer (API 26), OpenGL ES 3.0, ASTC texture support, a GPU with 8192 px textures.
+- Requirements: Android 8.0 or newer (API 26), OpenGL ES 3.0, ASTC texture support, a GPU with 4096 px textures (the 8192 px cloud and Milky Way maps load at half size on a GPU limited to 4096).
   The start page checks this and tells you if your device is not supported.
 - The APK is about 154 MB (the textures are most of it).
 - The APK on the Releases page is a release build signed with the author's own key (certificate SHA-256
@@ -52,16 +55,19 @@ once to a running wallpaper.
 | Setting | Range | Default | What it does |
 |---|---|---|---|
 | Earth size | 70-100 % | 92 % | share of the screen width the Earth fills |
-| Orbit time | 6-120 min | 24 min | time the camera needs for one lap; also how fast the Sun and Moon cross the picture |
+| Orbit time | 1-120 min | 24 min | time the camera needs for one lap; also how fast the Sun and Moon cross the picture |
 | Direction of the Earth's turning | left to right / right to left | left to right | which way the surface moves (the real Earth turns left to right as seen here) |
 | Camera latitude | 60 S to 60 N | 21.4 N | where the camera circles; north shows the northern aurora, south the southern one |
 | Star brightness | 25-150 % | 100 % | brightness of the stars (they stay sharp points) |
-| Clouds, cirrus, city lights, aurora, airglow and night clouds, lightning | on / off | on | switch parts of the picture |
+| Star motion | Slow drift / Real sky | Slow drift | how the stars move: "Slow drift" hangs them on the picture and lets them creep along (3 hours a lap, whatever the orbit time); "Real sky" puts them in space like the Moon and the Sun, so the camera's orbit pans them as fast as the orbit time says |
+| Clouds, cirrus, city lights, aurora, airglow and night clouds, lightning, Sun, Moon | on / off | on | switch parts of the picture (Sun and Moon hide only the discs and the Sun's glow; the light they give stays) |
 | Lightning frequency | 25-500 % | 100 % | how often the night storms flash (only while lightning is on) |
 | Cloud speed | 0-300 % | 100 % | 100 % = once around the Earth in an hour, 0 % = still |
 | Cloud direction | east / west | east | real clouds mostly drift east |
 | Frame rate | 5 / 10 / 20 / 30 fps | 10 fps | smoother motion costs power |
 | Render resolution | 50-100 % | 100 % | the picture is drawn smaller and stretched; stars keep their size |
+| Effects quality | High / Medium / Low | High | keeps every effect on but uses less work: the aurora in 12, 8 or 4 shells (all 16 where it grazes the limb, in every level), the airglow and the clouds with fewer samples and octaves, cloud shadows with fewer taps, one-fetch atmosphere tables in Low, the Moon's thin haze left out in Medium and Low, and (Android) the faintest stars left out. Measured on a Pixel 10 Pro with the three levels taking turns frame by frame (version 1.2, warm phone): about 3 ms (Medium, about 10 %) and 9 ms (Low, about 27 %) less per frame than High (the star limit is not in these numbers); on the PC about 40 % less in an aurora scene |
+| Map quality | Standard / Low | Standard | Low loads the maps one mip level smaller (half the width and height) for phones with little memory; on a Pixel 10 Pro the graphics memory (`dumpsys meminfo`, GL mtrack) was about 169 MB (Standard) and 79 MB (Low), and edge detail in a test picture about 15 % lower. A quarter-size level was tried and looked clearly too soft |
 | Sharp cloud edges | on / off | on | anti-aliasing of the cloud edges |
 | Smooth Sun and Moon | on / off | on | smears them along their path so they glide at low frame rates |
 
@@ -76,10 +82,10 @@ Display 1280 x 2856 (LTPO, 120 Hz), GPU PowerVR D-Series DXT-48-1536, debug buil
 
 | | Result |
 |---|---|
-| GPU time per frame, everything on | **about 25 ms** in a busy loop (23-27 ms depending on the scene); 25-30 ms measured during normal operation |
+| GPU time per frame, everything on | **about 25 ms** in version 1.1 in a busy loop (23-27 ms depending on the scene). Version 1.2 measured 30-35 ms on a warm phone (the planet-only picture then took 12-13 ms instead of 10 ms, so part of it is the phone, part is the new aurora) |
 | Frame budget at 10 fps / 20 fps / 30 fps | 100 ms / 50 ms / 33 ms |
-| So the GPU is busy about | **23-30 % at 10 fps**, 45-60 % at 20 fps, 70-90 % at 30 fps (hot and power hungry) |
-| Cheapest picture (planet and sky only) | about 10 ms |
+| So the GPU is busy about | **25-35 % at 10 fps**, 50-70 % at 20 fps, 75-100 % at 30 fps (hot and power hungry) |
+| Cheapest picture (planet and sky only) | about 10-13 ms |
 | Frame pacing at 10 fps | 100 ms, with up to +-8 ms jitter (one vsync at 120 Hz) |
 | Memory | about 250 MB (PSS), of which about 170 MB are GPU textures |
 | Battery | not measured precisely; a rough early test showed the whole phone drawing about 100 mA more with everything on than with a minimal picture (noisy, +-45 mA) |
@@ -91,7 +97,7 @@ Display 1280 x 2856 (LTPO, 120 Hz), GPU PowerVR D-Series DXT-48-1536, debug buil
 |---|---|
 | Clouds (main layer, cirrus and cloud detail) | 5.3 ms |
 | Sun and Moon (includes the motion blur) | 2.9 ms |
-| Aurora | 2.9 ms |
+| Aurora | 6.6 ms in 1.2 (was 2.9 ms in 1.1: more shells at the limb, rays, arcs and a glow; the High, Medium and Low settings below reduce it) |
 | Stars (sprites) | 1.4 ms |
 | Anti-aliasing of the cloud edges (1 tap instead of 4) | 1.2 ms |
 | City lights (with their glow) | 1.4 ms |
@@ -126,7 +132,7 @@ busy about 5 % of the time. This was measured in a browser, not inside Wallpaper
 The picture covers the same field of view at any resolution (the Earth fills 90 % of the screen height), so 1080p, 1440p and 4K
 show the same scene, only sharper; stars keep their size and brightness relative to the screen. Ultrawide screens show more sky
 at the sides; a screen taller than wide fits the Earth to the width. GPU time per frame on the Intel Arc B580 (browser,
-`?bench=1`): **1920 x 1080: 1.3 ms, 2560 x 1440: 1.6-1.9 ms, 3440 x 1440: 2.2 ms, 3840 x 2160: 3.3 ms**. The "Render resolution"
+`?bench=1`): **1920 x 1080: 1.3 ms, 2560 x 1440: 1.6-1.9 ms, 3440 x 1440: 2.2 ms, 3840 x 2160: 3.3 ms** (measured with the 4096 px maps; the 8192 px maps measured the same, 2.1 ms at 1440p in one scene). The "Render resolution"
 property lowers the cost (below 100 %) or supersamples for sharper stars and edges (up to 200 % in the PC version: 2560 x 1440 at
 200 % took 6.9 ms).
 
@@ -148,18 +154,27 @@ measurement over hours. Please open an issue with your device and frame times if
 
 **Easiest: subscribe on the [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3823825069).**
 
-Or by hand: download `earth-live-pc.zip` from the [Releases](../../releases) page and extract it to
+Or by hand: download `earth-live-pc.zip` from the [Releases](../../releases) page (about 160 MB: it contains the 8192 px maps for the "High" map quality too) and extract it to
 `Wallpaper Engine\projects\myprojects\earth-live-pc` (so that `project.json` lies directly in that folder), then pick it under
 "Installed".
 
 Every setting of the Android app is a Wallpaper Engine property too: Earth size, orbit time and direction, camera latitude,
-star brightness, lightning frequency, cloud speed and direction, a switch for every effect, frame rate (30 by default), render resolution, sharp
+star brightness and star motion, lightning frequency, cloud speed and direction, a switch for every effect (Sun and Moon included), frame rate (30 by default), render resolution, map quality, effect quality, sharp
 cloud edges and smoothing of the Sun and Moon. The picture adapts to the screen: 1080p to 4K, ultrawide, and screens that are
 taller than wide.
 
 It also runs in any WebGL2 browser (`python tools/web_server.py`, then open http://127.0.0.1:8791). It has been tried on one
 PC (Intel Arc B580) and not for hours; its performance numbers above were measured in a browser. To rebuild `web/assets`
 yourself run `python tools/make_web.py` (needs the intermediate textures from the tools below).
+
+**Map quality:** the PC version has three sizes of its maps. "Standard" (the default) uses 4096 x 2048 day, night and relief maps, 8192 x 4096 clouds and
+Milky Way, the same as the Android version. "High" uses 8192 x 4096 day and relief maps (made from the 21600 x 10800 Blue Marble files and the 21600 x 10800
+elevation map) and needs about 270 MB more graphics memory; at 1440p it looks the same as Standard, at 4K it shows about 40 % more detail in the mountains
+in my measurement. "Low" scales the same files down while loading (2048 x 1024 day, night and relief, 4096 x 2048 clouds and Milky Way) and needs about
+270 MB less graphics memory than Standard (about 90 MB of maps instead of about 360 MB, my estimate); at 1080p it measured within 0.5 % of Standard in
+edge detail, so it suits weak PCs and 1080p screens. The night map is the same 2012 map in all cases: a map of the 2016 Black Marble lights at 8192 px was
+tried and looked weaker (its lights are smaller than a screen pixel). `tools/make_hires_web.py` builds the large day and relief maps (and, as an experiment,
+a night map).
 
 ## Build
 
@@ -187,7 +202,10 @@ desktop preview (`tools/preview.py`) and the debug and profiling controls. The r
 - No automatic quality levels and no battery saver mode yet; use the frame rate and render resolution settings.
 - The Sun and Moon cross the picture faster than the Earth turns (they are fixed in space while the camera circles), which can
   look jerky at 5-10 fps; the smoothing option and a longer orbit time reduce this.
-- The southern aurora is hard to see from the default latitude (the oval lies beyond the south limb); set the latitude lower.
+- The southern aurora is hard to see from the default latitude (the oval lies beyond the south limb); set the latitude lower. Along
+  the limb it is a thin line and can show a faint texture.
+- The aurora is drawn for a moderately active night (Kp 3) and its size does not change with the real geomagnetic activity.
+- "Star motion: Real sky" makes the stars sweep past as fast as the Moon; at orbit times under about 6 minutes they race.
 - The Moon texture's origin (public domain or not) and the Gaia and GEBCO terms limit commercial use: the app is free, without
   ads, price or donation links (see [ATTRIBUTION.md](ATTRIBUTION.md)).
 

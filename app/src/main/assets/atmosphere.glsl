@@ -91,8 +91,10 @@ vec4 scatteringCoords(float r, float mu, float muS, float nu, bool ground) {
     return vec4((nu + 1.0) * 0.5, uMuS, uMu, uR);
 }
 
-vec3 lookup3(sampler3D table, vec4 uvwz) {
+// fast: one fetch from the nearest of the 8 slices in the scattering angle instead of two blended (half the fetches)
+vec3 lookup3(sampler3D table, vec4 uvwz, bool fast) {
     float texX = uvwz.x * (NU_SIZE - 1.0);
+    if (fast) return texture(table, vec3((floor(texX + 0.5) + uvwz.y) / NU_SIZE, uvwz.z, uvwz.w)).rgb;
     float x0 = floor(texX);
     float blend = texX - x0;
     vec3 a = texture(table, vec3((x0 + uvwz.y) / NU_SIZE, uvwz.z, uvwz.w)).rgb;
@@ -101,15 +103,15 @@ vec3 lookup3(sampler3D table, vec4 uvwz) {
 }
 
 // Radiance (per unit solar irradiance) scattered into the ray; the ray starts at the top of the air with zenith cosine mu
-vec3 scatteredLight(float mu, float muS, float nu, bool ground) {
+vec3 scatteredLight(float mu, float muS, float nu, bool ground, bool fast) {
     vec4 uvwz = scatteringCoords(ATM_TOP, mu, muS, nu, ground);
-    return lookup3(uScatR, uvwz) * phaseRayleigh(nu) + lookup3(uScatM, uvwz) * phaseMie(nu) + lookup3(uScatMS, uvwz);
+    return lookup3(uScatR, uvwz, fast) * phaseRayleigh(nu) + lookup3(uScatM, uvwz, fast) * phaseMie(nu) + lookup3(uScatMS, uvwz, fast);
 }
 
 // For the ray ro + rd*t (closest approach to the planet's centre: tca, squared distance d2): the light scattered into it
 // from the direction `light` (per unit irradiance) and the transmittance of the air along it (to the ground when the ray
 // hits the planet, else all the way through).
-void atmosphereAlongRay(vec3 ro, vec3 rd, float tca, float d2, vec3 light, out vec3 scattered, out vec3 transmittance) {
+void atmosphereAlongRay(vec3 ro, vec3 rd, float tca, float d2, vec3 light, bool fast, out vec3 scattered, out vec3 transmittance) {
     scattered = vec3(0.0);
     transmittance = vec3(1.0);
     if (d2 >= ATM_TOP * ATM_TOP) return;
@@ -117,16 +119,16 @@ void atmosphereAlongRay(vec3 ro, vec3 rd, float tca, float d2, vec3 light, out v
     vec3 entry = ro + rd * (tca - sqrt(ATM_TOP * ATM_TOP - d2));
     vec3 up = entry / ATM_TOP;
     float mu = dot(up, rd);
-    scattered = scatteredLight(mu, dot(up, light), dot(rd, light), ground);
+    scattered = scatteredLight(mu, dot(up, light), dot(rd, light), ground, fast);
     transmittance = ground ? transmittanceAlong(ATM_TOP, mu, distanceToBottom(ATM_TOP, mu), true) : transmittanceToTop(ATM_TOP, mu);
 }
 
 // Only the light from `light` (second light, e.g. the Moon), same ray
-vec3 scatteredFrom(vec3 ro, vec3 rd, float tca, float d2, vec3 light) {
+vec3 scatteredFrom(vec3 ro, vec3 rd, float tca, float d2, vec3 light, bool fast) {
     if (d2 >= ATM_TOP * ATM_TOP) return vec3(0.0);
     bool ground = d2 < ATM_BOTTOM * ATM_BOTTOM;
     vec3 up = (ro + rd * (tca - sqrt(ATM_TOP * ATM_TOP - d2))) / ATM_TOP;
-    return scatteredLight(dot(up, rd), dot(up, light), dot(rd, light), ground);
+    return scatteredLight(dot(up, rd), dot(up, light), dot(rd, light), ground, fast);
 }
 
 // Transmittance of the air for a ray that does not hit the planet (stars, Sun and Moon seen past the limb)

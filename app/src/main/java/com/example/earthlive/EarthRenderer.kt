@@ -25,6 +25,7 @@ class EarthRenderer(
 
     /** Profiling only (debug builds): bits that switch parts of the picture off, see SKIP_* in earth.frag. */
     var skipMask = 0
+    var qualityOverride = -1 // profiling only (debug builds): draw with this effects quality instead of the user's
     private var featureMask = 0 // the same bits, from the user's switches
     private var fill = OrbitCamera.FILL_X
     private var latitudeDeg = OrbitCamera.LATITUDE_DEG
@@ -51,7 +52,13 @@ class EarthRenderer(
     private val textures = IntArray(9) // units: day, night, topography/specular, clouds, sky cells, sky stars, Milky Way, star colours, Moon
     private val locations = HashMap<Pair<Int, String>, Int>()
     private var dayAsset: String? = null
+    private var mapSkip = 0       // mip levels left out of the big maps (the user's map quality)
+    private var quality = 0       // effects quality: 0 high, 1 medium, 2 low (uQuality in earth.frag)
+    private var realSky = false   // the stars stand in space and follow the camera's orbit (else: a slow drift)
+    private var mapsLoaded = false
     private var camera: OrbitCamera? = null
+    private var lastDrawMs = 0L   // a changed setting keeps the camera and the clouds where they were at this time
+    private var cloudOffset = 0.0 // turns added to the clouds' drift: it never jumps when their speed or direction changes
     private var viewWidth = 1
     private var viewHeight = 1
     private var tanHalfX = 0f
@@ -75,17 +82,15 @@ class EarthRenderer(
             GLES30.glUniform1i(loc(name), unit)
         }
         ensureSeason(System.currentTimeMillis())
-        textures[1] = KtxLoader.load(context, "earth_night.ktx", 1)
-        textures[2] = KtxLoader.load(context, "earth_topography_spec.ktx", 2)
-        textures[3] = KtxLoader.load(context, "earth_clouds.ktx", 3)
+        loadMaps()
         SkyData.load(context, 4, 5, 7, uploadStars = !useSprites).let { sky ->
             textures[4] = sky.textures[0]
             textures[5] = sky.textures[1]
             textures[7] = sky.textures[2]
-            if (useSprites) sprites = StarSprites(sky.table).also { it.init() }
+            if (useSprites) sprites = StarSprites(sky.table).also { it.init(); it.magLimit = when (quality) { 0 -> 99f; 1 -> 10.5f else -> 10f }; it.sweepSpeed = if (realSky) 2 * Math.PI / periodSeconds else 0.0 }
         }
-        textures[6] = KtxLoader.load(context, "sky_milkyway.ktx", 6)
         textures[8] = KtxLoader.load(context, "moon.ktx", 8)
+        mapsLoaded = true
         atmosphere = AtmosphereData.load(context, ATMOSPHERE_UNIT)
         GLES30.glDisable(GLES30.GL_DEPTH_TEST)
     }
@@ -95,8 +100,24 @@ class EarthRenderer(
         val asset = Seasons.dayAsset(nowMs)
         if (asset == dayAsset) return
         if (textures[0] != 0) GLES30.glDeleteTextures(1, intArrayOf(textures[0]), 0)
-        textures[0] = KtxLoader.load(context, asset, 0)
+        textures[0] = KtxLoader.load(context, asset, 0, mapSkip)
         dayAsset = asset
+    }
+
+    /** Night, relief, clouds and Milky Way at the user's map quality; the old ones go first (also when the quality changes). */
+    private fun loadMaps() {
+        for (unit in intArrayOf(1, 2, 3, 6)) if (textures[unit] != 0) GLES30.glDeleteTextures(1, intArrayOf(textures[unit]), 0)
+        textures[1] = KtxLoader.load(context, "earth_night.ktx", 1, mapSkip)
+        textures[2] = KtxLoader.load(context, "earth_topography_spec.ktx", 2, mapSkip)
+        textures[3] = KtxLoader.load(context, "earth_clouds.ktx", 3, mapSkip)
+        textures[6] = KtxLoader.load(context, "sky_milkyway.ktx", 6, mapSkip)
+    }
+
+    /** The map quality changed while the wallpaper runs: load the maps again (GL thread). */
+    private fun reloadMaps() {
+        loadMaps()
+        dayAsset = null // the day map of the month goes with them
+        ensureSeason(System.currentTimeMillis())
     }
 
     fun resize(width: Int, height: Int) {
@@ -111,17 +132,28 @@ class EarthRenderer(
 
     /** The user's settings; may be called at any time on the GL thread. */
     fun applySettings(v: Prefs.Values) {
+        val keptCloud = if (lastDrawMs > 0) cloudTurns(lastDrawMs) + cloudOffset else 0.0
         fill = v.fill
         latitudeDeg = v.latitudeDeg
         periodSeconds = v.periodSeconds
         featureMask = v.skipMask
         starGain = v.starGain
         flashRate = v.flashRate
+        val skipChanged = v.mapSkip != mapSkip
+        val qualityChanged = v.quality != quality
+        quality = v.quality
+        sprites?.magLimit = when (quality) { 0 -> 99f; 1 -> 10.5f else -> 10f }
+        if (qualityChanged) sprites?.invalidate()
+        mapSkip = v.mapSkip
         cloudRate = v.cloudRate
+        if (lastDrawMs > 0) cloudOffset = keptCloud - cloudTurns(lastDrawMs)
         frameSeconds = 1.0 / v.fps
         orbitDirection = v.orbitDirection
+        realSky = v.realSky
+        sprites?.sweepSpeed = if (realSky) 2 * Math.PI / periodSeconds else 0.0
         val scaleChanged = v.renderScale != renderScale
         renderScale = v.renderScale
+        if (skipChanged && mapsLoaded) reloadMaps()
         if (viewWidth > 1) {
             if (scaleChanged) updateTarget()
             buildCamera()
@@ -130,11 +162,9 @@ class EarthRenderer(
     }
 
     /** The cloud layer's drift against the ground in turns, from real time (a lap takes an hour at a rate of 1; negative: westward). */
-    private fun cloudShift(nowMs: Long): Float {
-        if (cloudRate == 0.0) return 0f
-        val lap = Prefs.CLOUD_LAP_SECONDS / Math.abs(cloudRate)
-        return (Math.signum(cloudRate) * ((nowMs / 1000.0) % lap) / lap).toFloat()
-    }
+    private fun cloudTurns(nowMs: Long): Double = cloudRate * (nowMs / 1000.0) / Prefs.CLOUD_LAP_SECONDS
+
+    private fun cloudShift(nowMs: Long): Float = (((cloudTurns(nowMs) + cloudOffset) % 1.0 + 1.0) % 1.0).toFloat()
 
     /** How far the camera turned about the Earth's north axis (radians, Earth-fixed frame) during the last frame. */
     private fun cameraTurn(orbit: OrbitCamera, jd: Double): Double {
@@ -157,7 +187,13 @@ class EarthRenderer(
     private fun buildCamera() {
         val tanY = OrbitCamera.tanHalfY()
         val tanX = tanY * viewWidth / viewHeight
-        camera = OrbitCamera(OrbitCamera.distanceForFill(tanX, fill), latitudeDeg, periodSeconds, orbitDirection)
+        val previous = camera
+        val next = OrbitCamera(OrbitCamera.distanceForFill(tanX, fill), previous?.latitudeDeg ?: latitudeDeg, periodSeconds, orbitDirection)
+        // the new orbit starts at the angle the old one has now: a new period or direction does not throw the camera elsewhere
+        if (previous != null) {
+            next.phase = if (lastDrawMs > 0) Astronomy.julianDate(lastDrawMs).let { previous.angle(it) - next.angle(it) } else previous.phase
+        }
+        camera = next
         tanHalfX = tanX.toFloat()
         tanHalfY = tanY.toFloat()
     }
@@ -165,6 +201,9 @@ class EarthRenderer(
     /** Returns false if nothing was drawn because the surface size is not known yet. */
     fun draw(nowMs: Long): Boolean {
         val orbit = camera ?: return false
+        // a new latitude is flown to, not jumped to (a fraction of a second, so a dragged slider does not lag), so the Moon and the Earth glide
+        val dt = if (lastDrawMs > 0) ((nowMs - lastDrawMs) / 1000.0).coerceIn(0.0, 1.0) else 1e3
+        orbit.latitudeDeg += (latitudeDeg - orbit.latitudeDeg) * (1.0 - Math.exp(-dt / 0.12))
         ensureSeason(nowMs)
         val jd = Astronomy.julianDate(nowMs)
         val sun = Astronomy.sunDirection(jd)
@@ -178,10 +217,14 @@ class EarthRenderer(
         uniform3("uCamRight", pose.right)
         uniform3("uCamUp", pose.up)
         uniform3("uCamFwd", pose.forward)
-        GLES30.glUniformMatrix3fv(loc("uSkyRot"), 1, false, SkyFrame.toUniform(SkyFrame.earthFixedToSky(jd, pose)), 0)
+        // The real sky: the stars stand in space like the Moon and the Sun and the camera's orbit pans them. Else they hang on the
+        // picture and creep, placed as seen from the default latitude, so that a new latitude still moves them with the Moon
+        val skyRot = if (realSky) SkyFrame.inertial(jd) else SkyFrame.earthFixedToSky(jd, orbit.pose(jd, OrbitCamera.LATITUDE_DEG))
+        GLES30.glUniformMatrix3fv(loc("uSkyRot"), 1, false, SkyFrame.toUniform(skyRot), 0)
         GLES30.glUniform1f(loc("uCloudShift"), cloudShift(nowMs))
         GLES30.glUniform1f(loc("uStarGain"), starGain)
         GLES30.glUniform1f(loc("uFlashRate"), flashRate)
+        GLES30.glUniform1i(loc("uQuality"), if (qualityOverride >= 0) qualityOverride else quality)
         GLES30.glUniform1f(loc("uSkyBlur"), cameraTurn(orbit, jd).toFloat())
         GLES30.glUniform1i(loc("uSkip"), skipMask or featureMask)
         GLES30.glUniform1f(loc("uAuroraPhase"), ((nowMs / 1000.0) % AURORA_PERIOD_SECONDS / AURORA_PERIOD_SECONDS).toFloat())
@@ -200,7 +243,8 @@ class EarthRenderer(
         GLES30.glUniform1f(loc("uP3"), if (outputP3) 1f else 0f)
         GLES30.glUniform1f(loc("uDither"), 1f / ((1 shl outputBits) - 1))
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
-        sprites?.let { if (skipMask and 1 == 0) drawStars(it, nowMs, jd, pose) }
+        sprites?.let { if (skipMask and 1 == 0) drawStars(it, nowMs, pose, skyRot) }
+        lastDrawMs = nowMs
         if (useHdr) {
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
             GLES30.glViewport(0, 0, viewWidth, viewHeight)
@@ -215,8 +259,7 @@ class EarthRenderer(
     }
 
     /** Adds the stars to the linear-light buffer: additive point sprites, hidden by the planet in the fragment shader. */
-    private fun drawStars(stars: StarSprites, nowMs: Long, jd: Double, pose: OrbitCamera.Pose) {
-        val sky = SkyFrame.earthFixedToSky(jd, pose)
+    private fun drawStars(stars: StarSprites, nowMs: Long, pose: OrbitCamera.Pose, sky: DoubleArray) {
         stars.update(nowMs, sky, pose.right, pose.up, pose.forward, tanHalfX.toDouble(), tanHalfY.toDouble())
         if (stars.rebuilt) {
             stars.rebuilt = false

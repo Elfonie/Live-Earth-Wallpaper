@@ -37,6 +37,7 @@ uniform int uSkip;          // bits that switch parts of the picture off (0 = ev
 uniform float uSkyBlur;   // radians the camera turned about the north axis during one frame (0: no motion blur of the Sun and the Moon)
 uniform float uStarGain;   // the user's star brightness, 1 = as drawn by default
 uniform float uFlashRate;  // the user's lightning frequency, 1 = as drawn by default
+uniform int uQuality;      // effects quality: 0 high (as designed), 1 medium, 2 low: fewer shells, taps and octaves, nothing is switched off
 uniform float uAuroraPhase; // 0..1 around every 2 minutes; the aurora only uses periodic functions of it, so it never jumps
 uniform float uCloudShift; // the cloud layer's eastward drift against the ground, in turns (0..1)
 uniform float uTime;       // seconds, wrapped; only drives the star flicker
@@ -70,9 +71,14 @@ const float RELIEF_STRENGTH = 0.9;
 // (it depends on the place, not on the height) and a vertical profile gives the violet lower fringe, the green body and
 // the faint red top; four thin shells along the view ray add them up, so seen along the limb the curtains stand up.
 const vec3 MAG_POLE = vec3(0.0479, 0.9870, 0.1536); // renderer frame: x = 0N 0E, y = north, z = 0N 90W
-const float AURORA_COLATITUDE = 0.33;               // 19 degrees from the pole at magnetic noon, 3 degrees more at midnight
-const float AURORA_WIDTH = 0.05;
-const float AURORA_GAIN = 0.31;
+// Boundaries of the oval in radians of colatitude from the magnetic pole, as a function of the angle phi = 15 degrees x magnetic
+// local time (0 at midnight), after Starkov (1994, Feldstein-Starkov oval) at Kp 3: theta = A0 + sum of A_i cos(i (phi - beta_i)),
+// stored as cos and sin parts so that only cos phi and sin phi are needed. Poleward and equatorward boundary of the discrete aurora.
+const float OVAL_POLE_0 = 0.2826; const vec3 OVAL_POLE_C = vec3(0.0260, 0.0001, 0.0073), OVAL_POLE_S = vec3(0.0030, 0.0001, -0.0009);
+const float OVAL_EQ_0 = 0.3727; const vec3 OVAL_EQ_C = vec3(0.0833, 0.0015, 0.0000), OVAL_EQ_S = vec3(-0.0193, -0.0008, -0.0003);
+// the equatorward boundary of the diffuse aurora (the faint glow that fills the oval and reaches a little beyond it)
+const float OVAL_DIFF_0 = 0.4460; const vec3 OVAL_DIFF_C = vec3(0.0469, -0.0034, 0.0012), OVAL_DIFF_S = vec3(-0.0351, 0.0112, -0.0040);
+const float AURORA_GAIN = 0.32;
 // heights 100 to 300 km at 64 % of their real height above the ground (lower), as 16 thin shells of equal spacing that
 // follow a smooth profile: a sharp lower edge with a violet-pink fringe, the green body that thins out upwards (557.7 nm), a
 // trace of yellow, and the faint red of atomic oxygen at the top (630 nm). Many close shells (a pixel or less apart) so that
@@ -80,6 +86,14 @@ const float AURORA_GAIN = 0.31;
 const int AURORA_N = 16;
 const float AURORA_SHELL[16] = float[16](1.0100, 1.0114, 1.0127, 1.0141, 1.0154, 1.0167, 1.0181, 1.0194, 1.0208, 1.0221, 1.0234, 1.0248, 1.0261, 1.0275, 1.0288, 1.0301);
 const vec3 AURORA_COLOUR[16] = vec3[16](vec3(0.2398, 0.0879, 0.3197), vec3(0.1940, 0.9446, 0.3896), vec3(0.1120, 0.4445, 0.1555), vec3(0.0673, 0.2388, 0.0827), vec3(0.0329, 0.0836, 0.0279), vec3(0.0259, 0.0623, 0.0208), vec3(0.0190, 0.0411, 0.0137), vec3(0.0120, 0.0198, 0.0067), vec3(0.0099, 0.0089, 0.0031), vec3(0.0126, 0.0081, 0.0031), vec3(0.0153, 0.0074, 0.0031), vec3(0.0180, 0.0067, 0.0032), vec3(0.0207, 0.0060, 0.0032), vec3(0.0234, 0.0053, 0.0032), vec3(0.0261, 0.0046, 0.0032), vec3(0.0288, 0.0038, 0.0032));
+// the same light in 12 shells for the high quality: the eight lowest as they are (nearly all of the light is there), the faint upper eight in pairs
+const float AURORA_SHELL12[12] = float[12](1.0100, 1.0114, 1.0127, 1.0141, 1.0154, 1.0167, 1.0181, 1.0194, 1.0215, 1.0241, 1.0268, 1.0295);
+const vec3 AURORA_COLOUR12[12] = vec3[12](vec3(0.2398, 0.0879, 0.3197), vec3(0.1940, 0.9446, 0.3896), vec3(0.1120, 0.4445, 0.1555), vec3(0.0673, 0.2388, 0.0827), vec3(0.0329, 0.0836, 0.0279), vec3(0.0259, 0.0623, 0.0208), vec3(0.0190, 0.0411, 0.0137), vec3(0.0120, 0.0198, 0.0067), vec3(0.0225, 0.0170, 0.0062), vec3(0.0333, 0.0141, 0.0063), vec3(0.0441, 0.0113, 0.0064), vec3(0.0549, 0.0084, 0.0064));
+// the same light in 8 and in 4 shells for the medium and low quality: neighbours added up, at their light-weighted height
+const float AURORA_SHELL8[8] = float[8](1.0110, 1.0132, 1.0160, 1.0185, 1.0215, 1.0241, 1.0268, 1.0295);
+const vec3 AURORA_COLOUR8[8] = vec3[8](vec3(0.4338, 1.0325, 0.7093), vec3(0.1793, 0.6833, 0.2382), vec3(0.0588, 0.1459, 0.0487), vec3(0.0310, 0.0609, 0.0204), vec3(0.0225, 0.0170, 0.0062), vec3(0.0333, 0.0141, 0.0063), vec3(0.0441, 0.0113, 0.0064), vec3(0.0549, 0.0084, 0.0064));
+const float AURORA_SHELL4[4] = float[4](1.0117, 1.0168, 1.0229, 1.0282);
+const vec3 AURORA_COLOUR4[4] = vec3[4](vec3(0.6131, 1.7158, 0.9475), vec3(0.0898, 0.2068, 0.0691), vec3(0.0558, 0.0311, 0.0125), vec3(0.0990, 0.0197, 0.0128));
 
 // Upper atmosphere seen from orbit: airglow (thin layers at 85-115 km: orange sodium/OH below, green oxygen in the middle,
 // faint red above) shines all night but is only visible along the limb, where the line of sight runs through the layers
@@ -95,6 +109,7 @@ const float UPPER_AIR_TOP = 1.0211;
 // faint red (630 nm) above it. The colour changes smoothly with height and the glow fades into the dark below instead of
 // stopping, so there is a band and not two thin lines.
 const int AIRGLOW_N = 22;
+const float AIRGLOW_MID = 1.0125; // the height of the brightest layer
 const float AIRGLOW_R0 = 1.0035, AIRGLOW_STEP = 0.0008;
 const vec3 AIRGLOW_PROFILE[22] = vec3[22](vec3(0.0195, 0.0280, 0.0105), vec3(0.0298, 0.0426, 0.0160), vec3(0.0421, 0.0600, 0.0226), vec3(0.0554, 0.0793, 0.0300), vec3(0.0700, 0.1026, 0.0392), vec3(0.0932, 0.1422, 0.0549), vec3(0.1561, 0.2339, 0.0893), vec3(0.3127, 0.4328, 0.1600), vec3(0.5328, 0.7312, 0.2681), vec3(0.6507, 1.0043, 0.3802), vec3(0.6198, 1.1594, 0.4596), vec3(0.5639, 1.1982, 0.4876), vec3(0.5263, 1.1133, 0.4543), vec3(0.4747, 0.9155, 0.3702), vec3(0.4054, 0.6713, 0.2677), vec3(0.3352, 0.4509, 0.1776), vec3(0.2750, 0.2866, 0.1126), vec3(0.2267, 0.1769, 0.0709), vec3(0.1882, 0.1076, 0.0456), vec3(0.1571, 0.0654, 0.0303), vec3(0.1311, 0.0408, 0.0211), vec3(0.1084, 0.0268, 0.0154));
 
@@ -117,8 +132,8 @@ const float R_MOON = 0.2725;  // Earth radii
 const float MOON_GAIN = 0.5;
 
 const int BLUR_TAPS = 6;
-const int SKIP_STARS = 1, SKIP_MILKY = 2, SKIP_ATMO_BACK = 4, SKIP_ATMO_FRONT = 8, SKIP_AURORA = 16, SKIP_SUN_MOON = 32,
-          SKIP_CLOUD_TAPS = 64, SKIP_RELIEF = 128, SKIP_CLOUDS = 256, SKIP_LIGHTS = 512, SKIP_UPPER_AIR = 1024, SKIP_LIGHTNING = 2048, SKIP_CIRRUS = 4096, SKIP_SUN_BLUR = 8192;
+const int SKIP_STARS = 1, SKIP_MILKY = 2, SKIP_ATMO_BACK = 4, SKIP_ATMO_FRONT = 8, SKIP_AURORA = 16, SKIP_SUN = 32,
+          SKIP_CLOUD_TAPS = 64, SKIP_RELIEF = 128, SKIP_CLOUDS = 256, SKIP_LIGHTS = 512, SKIP_UPPER_AIR = 1024, SKIP_LIGHTNING = 2048, SKIP_CIRRUS = 4096, SKIP_SUN_BLUR = 8192, SKIP_MOON = 16384;
 
 const float OCEAN_ROUGHNESS = 0.45; // GGX alpha 0.2, a sea at about 7 m/s: a wide soft sheen instead of a hot spot
 // The cloud map is infrared: cold land (autumn Europe, Russia, snow) is as bright as cloud. Over land the regional
@@ -241,7 +256,7 @@ float auroraNoise(vec2 ca, float freq, vec2 off) { return perlin(freq * 0.159154
 // few thin curtains (sheets standing on the field lines) that follow the oval in folds, with fine rays along them. pxAz is the
 // size of a pixel in radians of azimuth: detail finer than a pixel is faded out, and the edges are never sharper than a pixel.
 float auroraAt(vec3 pn, float pxAz, float pxColat) {
-    float night = smoothstep(0.15, -0.25, dot(pn, uSunDir));
+    float night = 1.0 - smoothstep(-0.25, 0.15, dot(pn, uSunDir));
     if (night <= 0.0) return 0.0;
     vec3 u = normalize(cross(MAG_POLE, vec3(0.0, 0.0, 1.0)));
     vec3 v = cross(MAG_POLE, u);
@@ -253,32 +268,91 @@ float auroraAt(vec3 pn, float pxAz, float pxColat) {
     vec2 s1 = vec2(cos(t + 1.0), sin(t + 1.0));
     vec2 s2 = vec2(cos(t + 2.0), sin(t + 2.0));
     // the oval sits closer to the equator and glows brighter towards magnetic midnight (the side away from the Sun)
-    float midnight = 0.5 - 0.5 * cos(az - atan(dot(uSunDir, v), dot(uSunDir, u)));
+    float d = az - atan(dot(uSunDir, v), dot(uSunDir, u)); // magnetic noon is at d = 0
+    float midnight = 0.5 - 0.5 * cos(d);
+    float c1 = -cos(d), s1p = -sin(d); // cos, sin of phi = 180 degrees + d
+    vec3 cs = vec3(c1, 2.0 * c1 * c1 - 1.0, c1 * (4.0 * c1 * c1 - 3.0)), sn = vec3(s1p, 2.0 * s1p * c1, s1p * (3.0 - 4.0 * s1p * s1p));
+    float thPole = OVAL_POLE_0 + dot(OVAL_POLE_C, cs) + dot(OVAL_POLE_S, sn);
+    float thEq = OVAL_EQ_0 + dot(OVAL_EQ_C, cs) + dot(OVAL_EQ_S, sn);
+    float thDiff = OVAL_DIFF_0 + dot(OVAL_DIFF_C, cs) + dot(OVAL_DIFF_S, sn);
     float colat = acos(min(abs(dot(pn, MAG_POLE)), 1.0));
     // the oval is wavy; it is sharp on its equatorward side and diffuse on the poleward side
-    float centre = AURORA_COLATITUDE + 0.05 * midnight + 0.05 * auroraNoise(ca, 10.0, vec2(7.0, 0.5) + 0.5 * s0);
-    float off = (colat - centre) / AURORA_WIDTH;
-    float envelope = off > 0.0 ? exp(-off * off * 4.0) : exp(-off * off * 0.8);
-    if (envelope < 0.02) return 0.0;
+    // broad and bright on the night side, a thin band by day; the bright curtains lie towards the equatorward edge
+    if (colat < thPole - 0.1 || colat > thDiff + 0.03) return 0.0; // in the polar cap or far outside the oval: no light, no noise to compute
+    float centre = mix(thPole, thEq, 0.65)
+        + 0.022 * auroraNoise(ca, 8.0, vec2(7.0, 0.5) + 0.5 * s0)
+        + 0.007 * auroraNoise(ca, 18.0, vec2(-3.0, 7.0) + 0.8 * s1);
+    float off = (colat - centre) / max(0.5 * (thEq - thPole), 0.02);
+    float envelope = off > 0.0 ? exp(-off * off * 4.0) : exp(-off * off * 1.5);
+    // the diffuse glow: from the poleward boundary to the diffuse boundary, soft at both ends, in broad slow patches
+    float dfill = smoothstep(thPole - 0.03, thPole + 0.05, colat) * (1.0 - smoothstep(thDiff - 0.07, thDiff - 0.01, colat));
+    if (envelope < 0.02 && dfill < 0.02) return 0.0;
     // a main curtain and a fainter second one, folded at two scales and moving; the lower (equatorward) edge is sharp
     float fade21 = 1.0 - smoothstep(0.3, 0.7, pxAz * 21.0);
-    float fold1 = 0.028 * auroraNoise(ca, 7.0, vec2(2.0, 3.0) + 2.0 * s0) + 0.007 * fade21 * auroraNoise(ca, 21.0, vec2(-3.0, 7.0) + 3.0 * s1);
-    float fold2 = 0.015 * auroraNoise(ca, 5.0, vec2(9.0, 11.0) + 1.5 * s2);
-    float w1 = max(0.0105, 1.2 * pxColat), w2 = max(0.0135, 1.2 * pxColat);
+    float fold1 = 0.045 * auroraNoise(ca, 5.5, vec2(2.0, 3.0) + 2.0 * s0);
+    if (uQuality < 2) fold1 += 0.016 * fade21 * auroraNoise(ca, 21.0, vec2(-3.0, 7.0) + 3.0 * s1); // the fine fold: not in low
+    float fold2 = 0.024 * auroraNoise(ca, 4.5, vec2(9.0, 11.0) + 1.5 * s2);
+    float w1 = max(0.0105, 1.2 * pxColat), w2 = max(0.02, 1.2 * pxColat);
     float r1 = (colat - centre - 0.012 + fold1) / w1;
-    float r2 = (colat - centre + 0.020 + fold2) / w2;
-    float curtains = exp(-r1 * r1 * (r1 > 0.0 ? 1.9 : 0.65)) + 0.5 * exp(-r2 * r2 * (r2 > 0.0 ? 1.9 : 0.65));
+    float r2 = (colat - centre + 0.014 + fold2) / w2;
+    float second = 0.4 * smoothstep(-0.15, 0.35, auroraNoise(ca, 4.0, vec2(5.0, 2.0) + 0.7 * s2)); // in stretches only
+    // the edge towards the equator is steep but not a cut: the bright core is followed by a wide faint halo on both sides, the light
+    // that the thin air and the camera scatter around anything bright (a bloom in the place of the aurora, free of a screen pass)
+    float curtains = exp(-r1 * r1 * (r1 > 0.0 ? 1.1 : 0.65)) + 0.25 * exp(-r1 * r1 * 0.04) + second * exp(-r2 * r2 * (r2 > 0.0 ? 1.4 : 0.65));
+    // more arcs inside the oval on the night side: thin curvy lines, the zero lines of a noise that changes fast across the oval
+    // and slowly along it (the noise circle moves with the latitude), so they run with the oval, branch and fold
+    // Seen along the limb the ground slides far for each pixel (up to a hundredth of a radian), and the cross-track coordinate of
+    // these noises with it: they would be sampled at a different place of the noise every pixel and show as slanted hatching. Where a
+    // pixel covers more than 0.008 of the oval the cross-track change is faded out, and the noises only vary along the oval (the
+    // factor is 1 anywhere else, so the picture on the disc stays as it is).
+    float cg = min(1.0, 0.008 / max(pxColat, 1e-5));
+    float crossTrack = (colat - centre) * cg;
+    float colatB = centre + crossTrack;
+    float flow = auroraNoise(ca, 3.5, vec2(crossTrack * 8.0 + 4.0 * fold1, crossTrack * 5.0 + 3.0 * fold2) + vec2(5.0, 9.0) + 0.6 * s2) * 0.65; // 0.65: gentler swirls (the whole warp is one third weaker)
+    float nArc = auroraNoise(ca, 9.0, vec2(crossTrack * 20.0 + 3.0 * fold1 + 3.0 * flow, crossTrack * 11.0 + 2.0 * fold2 - 1.8 * flow) + vec2(3.0, 1.0) + 0.7 * s0);
+    float arcs = 1.0 * pow(max(1.0 - abs(nArc) * 2.8, 0.0), 2.5) + 0.14 * pow(max(1.0 - abs(nArc) * 1.2, 0.0), 1.8);
+    float ovalWobble = 0.55 * fold1 + 0.45 * fold2;
+    float ovalMask = smoothstep(thPole + ovalWobble - 0.01, thPole + ovalWobble + 0.035, colat)
+        * (1.0 - smoothstep(thEq + ovalWobble - 0.025, thEq + ovalWobble + 0.005, colat));
     // bright stretches and dim ones, brightness waves running along the oval, and rays along the curtains that shimmer
-    float patches = 0.15 + 0.85 * smoothstep(-0.2, 0.4, auroraNoise(ca, 15.0, vec2(3.0, 1.3) + 0.8 * s0));
+    // bright and dim stretches along the arc (it stays one ribbon), and smaller patches
+    float patchNoise = 0.62 * auroraNoise(ca, 5.0, vec2(crossTrack * 13.0 + 3.0 * fold1 + 1.5 * flow, crossTrack * 7.0 - 1.0 * flow) + vec2(8.0, 4.0) + 0.6 * s1)
+        + 0.38 * auroraNoise(ca, 18.0, vec2(crossTrack * 38.0 + 2.0 * fold2 - 1.8 * flow, crossTrack * 19.0 + 0.9 * flow) + vec2(3.0, 1.3) + 0.8 * s0);
+    float patches = 0.22 + 0.90 * smoothstep(-0.05, 0.35, patchNoise);
     float pulse = 0.82 + 0.18 * sin(8.0 * t - 5.0 * az);
-    float fade70 = 1.0 - smoothstep(0.3, 0.7, pxAz * 70.0);
-    float rays = clamp(0.55 + 0.9 * (0.9 * auroraNoise(ca, 32.0, vec2(0.0, 5.0) + 3.0 * s2) + 0.8 * fade70 * auroraNoise(ca, 70.0, vec2(3.0, 0.0) + 5.0 * s1)), 0.06, 1.35);
+    float rayNoise;
+    if (uQuality == 2) {
+        rayNoise = 0.72 * auroraNoise(ca, 28.0, vec2(colatB * 30.0 + 4.0 * fold1, colatB * 13.0) + vec2(0.0, 5.0) + 3.0 * s2); // low: the coarse rays
+    } else {
+        // Thin rays that stand on the field lines: a high frequency along the oval, hardly any change across it. Their spacing is
+        // stretched and squeezed by a slow swing of the azimuth, so that they come in clusters and gaps, not evenly like a fence;
+        // the finer ones fade out where they get narrower than a pixel (no shimmer when the picture moves).
+        float swing = 0.30 * auroraNoise(ca, 8.0, vec2(6.0, 2.0) + 0.5 * s1);
+        vec2 caR = vec2(cos(swing) * ca.x - sin(swing) * ca.y, sin(swing) * ca.x + cos(swing) * ca.y);
+        float fadeFine = 1.0 - smoothstep(0.3, 0.7, pxAz * 120.0);
+        float fadeMid = 1.0 - smoothstep(0.3, 0.7, pxAz * 60.0);
+        float fadeLow = 1.0 - smoothstep(0.3, 0.7, pxAz * 24.0);
+        rayNoise = 0.62 * fadeMid * auroraNoise(caR, 60.0, vec2(colatB * 6.0 + 2.5 * fold1, colatB * 3.0) + vec2(0.0, 5.0) + 3.0 * s2)
+                 + 0.30 * fadeLow * auroraNoise(ca, 24.0, vec2(colatB * 14.0 + 3.0 * fold1, colatB * 6.0) + vec2(1.0, 4.0) + 2.0 * s2)
+                 + 0.36 * fadeFine * auroraNoise(caR, 120.0, vec2(colatB * 9.0 + 3.0 * fold2, colatB * 4.0) + vec2(3.0, 0.0) + 5.0 * s1);
+    }
+    float rays = clamp(0.58 + 1.25 * rayNoise, 0.06, 1.7);
     float sector = 0.35 + 0.65 * midnight * midnight;
-    return envelope * patches * pulse * sector * (0.9 * curtains * rays + 0.22) * night;
+    // a slow pulse of the whole oval, and a brightening near midnight that swings to and fro and flares up now and then
+    float bulge = exp(5.0 * (-cos(d - 0.8 * sin(t)) - 1.0));
+    float gain = (0.94 + 0.06 * sin(t + 1.0)) * (1.0 + 0.5 * bulge * (0.5 + 0.5 * sin(2.0 * t)));
+    float soft = uQuality < 2 ? auroraNoise(ca, 3.0, vec2(1.0, 9.0) + 0.5 * s0) : 0.0;
+    float diffuse = 0.11 * dfill * (0.7 + 0.5 * soft) * (0.15 + 0.85 * clamp(patches, 0.0, 1.0));
+    float arcTerm = 0.65 * ovalMask * arcs * patches * rays * (0.3 + 0.7 * midnight);
+    return (envelope * patches * pulse * (0.9 * curtains * rays + 0.01) + arcTerm + diffuse) * sector * gain * night;
 }
 
-vec3 aurora(vec3 ro, vec3 rd, float tca, float d2) {
+vec3 aurora(vec3 ro, vec3 rd, float tca, float d2, vec3 airT, float fw) { // fw: a pixel in the closest-approach distance
     vec3 sum = vec3(0.0);
+    // A ray that misses the planet crosses every shell twice, in front of its tangent point and behind it, and the far side of the
+    // oval shows above the limb (as on the photos from the Space Station). The two crossings share the ray's path in the shell;
+    // the light of the far one comes through the air at the tangent point.
+    bool limbRay = d2 >= R_EARTH * R_EARTH;
     // Quick test: the shells are so close together that a ray meets the polar caps on all of them or on none. Look at the two
     // ends of the stack (or the outer one and the tangent point for a grazing ray), with a margin for the limb where the hit
     // points move apart: only then the 16 shells are worth their cost.
@@ -286,22 +360,53 @@ vec3 aurora(vec3 ro, vec3 rd, float tca, float d2) {
     if (d2 >= rOut * rOut) return sum;
     vec3 pOut = normalize(ro + rd * (tca - sqrt(rOut * rOut - d2)));
     bool maybe = abs(dot(pOut, MAG_POLE)) > 0.76;
+    if (!maybe && limbRay) maybe = abs(dot(normalize(ro + rd * (tca + sqrt(rOut * rOut - d2))), MAG_POLE)) > 0.76;
     if (!maybe) {
         vec3 pOther = normalize(ro + rd * (d2 < rIn * rIn ? tca - sqrt(rIn * rIn - d2) : tca)); // the inner shell, or the tangent point
         maybe = abs(dot(pOther, MAG_POLE)) > 0.76;
     }
     if (!maybe) return sum;
+    // 12, 8 or 4 shells, but all 16 where the ray grazes the shells, in every quality: at the limb the shells are seen edge-on, and
+    // fewer of them, or wider gaps, show as a beaded, hatched line (it is a thin ring of pixels, so it costs little)
+    bool full = limbRay;
+    float dd = sqrt(d2);
+    vec2 prevT = vec2(-1.0); // where the ray met the shell below, in front of and behind the tangent point
+    int n = full ? 16 : (uQuality == 0 ? 12 : (8 >> (uQuality - 1))); // 16, 12, 8 or 4 shells
     for (int i = 0; i < AURORA_N; i++) {
-        float r = AURORA_SHELL[i];
+        if (i >= n) break;
+        float r = full ? AURORA_SHELL[i] : (uQuality == 0 ? AURORA_SHELL12[i] : (uQuality == 1 ? AURORA_SHELL8[i] : AURORA_SHELL4[i]));
         if (d2 >= r * r) continue;
-        float t = tca - sqrt(r * r - d2);
-        vec3 pn = normalize(ro + rd * t);
-        if (abs(dot(pn, MAG_POLE)) < 0.88) continue;
-        // a pixel's footprint on the shell in Earth radii (stretched where the ray grazes it), and in azimuth at the oval
-        float px = uPixelAngle * t / clamp(abs(dot(rd, pn)), 0.25, 1.0);
-        sum += AURORA_COLOUR[i] * auroraAt(pn, px * 3.1, px);
+        float h = sqrt(r * r - d2);
+        vec3 colour = full ? AURORA_COLOUR[i] : (uQuality == 0 ? AURORA_COLOUR12[i] : (uQuality == 1 ? AURORA_COLOUR8[i] : AURORA_COLOUR4[i]));
+        float share = limbRay ? 0.5 : 1.0;
+        for (int side = 0; side < 2; side++) {
+            if (side == 1 && !limbRay) break;
+            float t = side == 0 ? tca - h : tca + h;
+            vec3 pn = normalize(ro + rd * t);
+            if (abs(dot(pn, MAG_POLE)) < 0.86) continue;
+            // a pixel's footprint on the shell in Earth radii (stretched where the ray grazes it), and in azimuth at the oval
+            float cosV = abs(dot(rd, pn));
+            // where the ray grazes the shells their hit points lie far apart on the ground: a curtain's cross-track detail (arcs, folds, a
+            // thin line) would be sampled once per shell and beat against the shells as a hatching, so the footprint is at least that gap
+            float gap = prevT[side] > 0.0 ? abs(t - prevT[side]) * sqrt(max(1.0 - cosV * cosV, 0.0)) : 0.0;
+            prevT[side] = t;
+            // the far hit of a ray at the limb slides a long way along the ground for each pixel (h is small near the tangent): the
+            // curtain's fine detail there would change several times within a pixel and show as a hatching
+            float slide = fw * dd / max(h, 0.004);
+            float px = max(max(uPixelAngle * t / clamp(cosV, 0.08, 1.0), gap), slide);
+            float pathLength = clamp(0.45 / max(cosV, 0.05), 0.35, 2.4); // 1 / cos of the angle to the vertical, bounded
+            // A shell is met by the ray from the impact distance down: its path in the shell grows from nothing, as the root of the
+            // distance, not with a jump. The jump (a step at every shell, half a pixel apart at the limb) beat against the pixel grid
+            // as a hatching of fine slanted lines.
+            float rise = smoothstep(0.0, 0.07, h);
+            sum += colour * (auroraAt(pn, px * 3.1, px) * (pathLength * share * rise * (side == 0 ? 1.0 : airT.g)));
+        }
     }
-    return sum * AURORA_GAIN;
+    sum *= AURORA_GAIN * (uQuality == 0 ? 1.0 : 1.12); // medium and low lose the finest structure and a little light with it
+    // the brightest cores go over towards white-turquoise (the nitrogen emission mixes in), as in strong displays
+    float core = smoothstep(0.15, 0.7, sum.g);
+    sum.rb += core * sum.g * vec2(0.12, 0.22);
+    return sum;
 }
 
 vec3 gSun;     // the Sun's direction and the Moon's place as sunBody and moonBody use them: the real ones, or turned back
@@ -414,27 +519,38 @@ float softShell(float d2, float r1, float r2) {
                 + 0.12 * (shellPath(d2, r1 - t, r1 - 0.5 * t) + shellPath(d2, r2 + 0.5 * t, r2 + t)));
 }
 
-vec3 upperAtmosphere(vec3 ro, vec3 rd, float tca, float d2, float fw) { // fw: the size of a pixel in the closest-approach distance
+vec3 upperAtmosphere(vec3 ro, vec3 rd, float tca, float d2, float fw, vec3 airT) { // fw: the size of a pixel in the closest-approach distance
     if (d2 >= UPPER_AIR_TOP * UPPER_AIR_TOP) return vec3(0.0);
     // the place the line of sight is "at": the tangent point at the limb, else where it enters the layers
     vec3 pn = normalize(ro + rd * (d2 >= R_EARTH * R_EARTH ? tca : tca - sqrt(max(UPPER_AIR_TOP * UPPER_AIR_TOP - d2, 0.0))));
     float sunDot = dot(pn, uSunDir);
     vec3 sum = vec3(0.0);
 
-    float night = smoothstep(0.12, -0.25, sunDot);
+    float night = 1.0 - smoothstep(-0.25, 0.12, sunDot);
     if (night > 0.0) {
         // Three taps across the pixel (along the closest-approach distance) average the thin bright line at the limb and the
         // step at the planet's edge: without them the glow shows pixel stairs. On the disc: straight through the layers (the
         // sum of the profile); at the limb the line of sight runs along the layers, shell by shell.
         vec3 glow = vec3(0.0);
         float dd = sqrt(d2);
+        int taps = uQuality == 2 ? 2 : 3;
+        int ks = uQuality == 0 ? 1 : 2;
+        float tw = 1.0 / float(taps);
         for (int t = 0; t < 3; t++) {
-            float ds = dd + (float(t) - 1.0) * 0.4 * fw;
+            if (t >= taps) break;
+            float ds = dd + (taps == 2 ? float(t) - 0.5 : float(t) - 1.0) * 0.9 * fw;
             float d2s = ds * ds;
-            if (d2s < R_EARTH * R_EARTH) { glow += vec3(2.3896, 3.6279, 1.4336) * 0.3333; continue; }
-            for (int k = 0; k < AIRGLOW_N; k++) {
+            if (d2s < R_EARTH * R_EARTH) {
+                // straight down through the layers; towards the edge of the disc the line of sight gets slanted and so longer in them
+                // (1 / cos of the angle to the vertical at the layer, 6 at the edge), which meets the limb without a step
+                float slant = min(inversesqrt(max(1.0 - d2s / (AIRGLOW_MID * AIRGLOW_MID), 0.0)), 6.0);
+                glow += vec3(2.3896, 3.6279, 1.4336) * (tw * slant);
+                continue;
+            }
+            for (int k = 0; k < AIRGLOW_N; k += ks) {
                 float r1 = AIRGLOW_R0 + AIRGLOW_STEP * float(k);
-                glow += AIRGLOW_PROFILE[k] * (0.1333 * min(shellPath(d2s, r1, r1 + AIRGLOW_STEP), 24.0)); // 0.4 / 3; the cap tames the thin bright line a shell makes at its tangent
+                // the far half of the line of sight runs through the air at the tangent point; the near half does not
+                glow += AIRGLOW_PROFILE[k] * (0.4 * tw * float(ks) * min(shellPath(d2s, r1, r1 + AIRGLOW_STEP), 14.0)) * (0.5 + 0.5 * airT); // 0.4 = the gain; the cap tames the thin bright line a shell makes at its tangent
             }
         }
         // never even: gravity waves and patches of the layer make it brighter and dimmer along the limb, in broad patches and
@@ -473,8 +589,11 @@ vec2 lightning(vec2 uv, float storm, float lat) {
     float chance = FLASH_CHANCE * uFlashRate * storm * exp(-(lat * lat) / (0.5 * 0.5)); // tropics: lat in radians
     float cosLat = max(cos(lat), 0.2);
     vec2 light = vec2(0.0);
+    int reach = uQuality == 2 ? 1 : 2, strokes = uQuality == 2 ? 2 : 3;
     for (int j = -2; j <= 2; j++) {
+        if (abs(j) > reach) continue;
         for (int i = -2; i <= 2; i++) {
+            if (abs(i) > reach) continue;
             vec2 cell = base + vec2(float(i), float(j));
             vec2 id = vec2(mod(cell.x, FLASH_GRID.x), cell.y);
             float h = hash12(id * 0.731 + vec2(bucket * 1.913, 7.31));
@@ -485,6 +604,7 @@ vec2 lightning(vec2 uv, float storm, float lat) {
             vec2 centre0 = (cell + vec2(hash12(id + 11.1), hash12(id + 23.7))) / FLASH_GRID;
             float size = 0.010 + 0.006 * hash12(id + 41.9);
             for (int k = 0; k < 3; k++) { // up to three strokes, each a little weaker and apart from the one before
+                if (k >= strokes) break;
                 float since = inBucket - start - float(k) * (0.07 + 0.05 * hash12(id + float(k) * 5.1));
                 if (since < 0.0) continue;
                 float envelope = exp(-since / 0.09) * (1.0 - 0.3 * float(k));
@@ -586,9 +706,10 @@ void main() {
     vec3 airT = vec3(1.0);
     if ((uSkip & (SKIP_ATMO_BACK | SKIP_ATMO_FRONT)) == 0) {
         vec3 scattered;
-        atmosphereAlongRay(ro, rd, tca, d2, L, scattered, airT);
+        atmosphereAlongRay(ro, rd, tca, d2, L, uQuality == 2, scattered, airT); // low: one fetch per table instead of two
         airLight = SUN_E * ATMO_BOOST * scattered;
-        if (uMoonPhase > 0.03) airLight += MOON_COLOR * uMoonPhase * ATMO_BOOST * 0.5 * scatteredFrom(ro, rd, tca, d2, M);
+        // the haze of the Moon's light: faint (1 : 700 of the Sun), so medium and low leave out the thin phases and take it from one fetch per table
+        if (uMoonPhase > (uQuality == 0 ? 0.03 : (uQuality == 1 ? 0.1 : 0.2))) airLight += MOON_COLOR * uMoonPhase * ATMO_BOOST * 0.5 * scatteredFrom(ro, rd, tca, d2, M, uQuality > 0);
         airLight += AIRGLOW * 1.0 * (1.0 - airT); // the night glow of the air, in proportion to the air looked through
     }
 
@@ -604,7 +725,7 @@ void main() {
         float land = 1.0 - topo.a;
         vec2 cloudRamp = vec2(0.10, 0.75);
         float nightness = 1.0 - smoothstep(-0.12, 0.05, ndl);
-        int taps = (uSkip & SKIP_CLOUD_TAPS) != 0 ? 1 : 4;
+        int taps = (uSkip & SKIP_CLOUD_TAPS) != 0 ? 1 : (uQuality == 2 ? 2 : 4); // low: two taps (the diagonal pair)
         float tapWeight = 1.0 / float(taps);
         const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 
@@ -612,7 +733,7 @@ void main() {
         float lightLuma = 0.0;
         if (nightness > 0.0 && (uSkip & SKIP_LIGHTS) == 0 && dot(textureGrad(uNight, uvE, gE.dx * 4.0, gE.dy * 4.0).rgb, LUMA) > LIGHTS_COARSE_MIN) {
             for (int i = 0; i < taps; i++) {
-                vec2 o = SUBPIXEL[i];
+                vec2 o = SUBPIXEL[taps == 2 ? 2 * i : i];
                 lightLuma += max(dot(textureGrad(uNight, uvE + gE.dx * o.x + gE.dy * o.y, gE.dx, gE.dy).rgb, LUMA) - 0.02, 0.0);
             }
             lightLuma *= tapWeight;
@@ -622,8 +743,8 @@ void main() {
         float cityGlow = 0.0;
         if (nightness > 0.0 && (uSkip & SKIP_LIGHTS) == 0) {
             float w1 = max(0.0044 / uPixelAngle, 2.0), w2 = max(0.017 / uPixelAngle, 6.0);
-            cityGlow = 0.6 * dot(textureGrad(uNight, uvE, gE.dx * w1, gE.dy * w1).rgb, LUMA)
-                     + 0.4 * dot(textureGrad(uNight, uvE, gE.dx * w2, gE.dy * w2).rgb, LUMA);
+            cityGlow = 0.6 * dot(textureGrad(uNight, uvE, gE.dx * w1, gE.dy * w1).rgb, LUMA);
+            cityGlow += uQuality == 2 ? 0.4 * cityGlow / 0.6 : 0.4 * dot(textureGrad(uNight, uvE, gE.dx * w2, gE.dy * w2).rgb, LUMA); // low: the wide blur is taken from the narrow one
         }
 
         // Clouds and their shadow. A coarse look first (clear sky stays at zero). Then one fine sample: where it agrees with
@@ -639,7 +760,7 @@ void main() {
                     alphaAvg = smoothstep(cloudRamp.x, cloudRamp.y, cloudCover);
                 } else {
                     for (int i = 0; i < taps; i++) {
-                        vec2 o = SUBPIXEL[i];
+                        vec2 o = SUBPIXEL[taps == 2 ? 2 * i : i];
                         float cc = clamp(textureGrad(uClouds, uvC + gC.dx * o.x + gC.dy * o.y, gC.dx, gC.dy).r - landBias, 0.0, 1.0);
                         cloudCover += cc;
                         alphaAvg += smoothstep(cloudRamp.x, cloudRamp.y, cc);
@@ -655,12 +776,14 @@ void main() {
                     if (abs(fineS - coarseS) < DETAIL_MIN) {
                         shadowAvg = smoothstep(cloudRamp.x, cloudRamp.y, clamp(fineS - landBias, 0.0, 1.0));
                     } else {
+                        int shadowTaps = uQuality == 0 ? taps : (uQuality == 1 ? min(taps, 2) : 1);
                         for (int i = 0; i < taps; i++) {
-                            vec2 o = SUBPIXEL[i];
+                            if (i >= shadowTaps) break;
+                            vec2 o = SUBPIXEL[shadowTaps == 2 ? 2 * i : i];
                             float sc = clamp(textureGrad(uClouds, uvS + gS.dx * o.x + gS.dy * o.y, gS.dx, gS.dy).r - landBias, 0.0, 1.0);
                             shadowAvg += smoothstep(cloudRamp.x, cloudRamp.y, sc);
                         }
-                        shadowAvg *= tapWeight;
+                        shadowAvg /= float(shadowTaps);
                     }
                 }
             }
@@ -675,7 +798,8 @@ void main() {
         // The IR-based map reads high-latitude cold ground as cloud, so only the brightest values count as dense cloud
         float cloudDetail = 0.0;
         if (alphaAvg > 0.0 && (uSkip & SKIP_CLOUDS) == 0) {
-            cloudDetail = 0.5 * (perlin(nC.xy * 160.0) + perlin(nC.zy * 160.0 + 17.0)) + 0.25 * (perlin(nC.xy * 370.0 + 5.0) + perlin(nC.zy * 370.0 + 29.0));
+            cloudDetail = 0.5 * (perlin(nC.xy * 160.0) + perlin(nC.zy * 160.0 + 17.0));
+            if (uQuality < 2) cloudDetail += 0.25 * (perlin(nC.xy * 370.0 + 5.0) + perlin(nC.zy * 370.0 + 29.0)); // the fine octave: not in low
             alphaAvg = clamp(alphaAvg + cloudDetail * CLOUD_DETAIL * 4.0 * alphaAvg * (1.0 - alphaAvg), 0.0, 1.0);
         }
         alphaC = 0.92 * alphaAvg;
@@ -739,7 +863,8 @@ void main() {
             float thin = smoothstep(0.50, 0.92, high); // only the densest parts of the map: sparse cirrus, not a second cloud layer
             if (thin > 0.0) {
                 // streaks along the lines of latitude: slow variation along them, fast across them
-                float wisps = 0.65 * valueNoise3(vec3(nH.x * 14.0, nH.z * 14.0, nH.y * 60.0)) + 0.35 * valueNoise3(vec3(nH.x * 30.0, nH.z * 30.0, nH.y * 150.0) + 7.0);
+                float wisps = 0.65 * valueNoise3(vec3(nH.x * 14.0, nH.z * 14.0, nH.y * 60.0));
+                wisps = uQuality == 2 ? wisps / 0.65 * 0.9 : wisps + 0.35 * valueNoise3(vec3(nH.x * 30.0, nH.z * 30.0, nH.y * 150.0) + 7.0); // low: the coarse octave only
                 alphaH = 0.24 * thin * smoothstep(-0.2, 0.45, wisps);
                 float ndlH = dot(nH, L);
                 float visH = smoothstep(0.0, 0.12, ndlH + sqrt(1.0 - 1.0 / (R_CIRRUS * R_CIRRUS)));
@@ -773,34 +898,39 @@ void main() {
 #endif
         // faint stars close to the limb and behind the glow band are weaker, only well above it they shine fully
         vec3 backdrop = (milky + stars) * limbFade(dist);
-        if ((uSkip & SKIP_SUN_MOON) != 0) {
+        bool noSun = (uSkip & SKIP_SUN) != 0, noMoon = (uSkip & SKIP_MOON) != 0; // the user's switches: the discs only, the light stays
+        if (noSun && noMoon) {
             sky = backdrop * airT;
         } else if ((uSkip & SKIP_SUN_BLUR) != 0 || abs(uSkyBlur) < 1e-6) {
-            vec4 moon = moonBody(ro, rd);
-            sky = (mix(backdrop, moon.rgb, moon.a) + sunBody(rd) * (1.0 - moon.a)) * airT;
+            vec4 moon = noMoon ? vec4(0.0) : moonBody(ro, rd);
+            vec3 sun = noSun ? vec3(0.0) : sunBody(rd);
+            sky = (mix(backdrop, moon.rgb, moon.a) + sun * (1.0 - moon.a)) * airT;
         } else {
             // The Sun and the Moon move across the picture much faster than the Earth (they are fixed in space while the
             // camera circles). At a low frame rate that shows as jumps, so they are smeared over the distance they travel in
             // one frame: the camera's turn is a rotation about the north axis, so earlier places of the Sun and the Moon are
             // the real ones turned about that axis.
             vec3 acc = vec3(0.0);
+            int blurTaps = uQuality == 0 ? BLUR_TAPS : (uQuality == 1 ? 4 : 2);
             for (int k = 0; k < BLUR_TAPS; k++) {
-                float a = uSkyBlur * (0.5 - float(k) / float(BLUR_TAPS - 1));
+                if (k >= blurTaps) break;
+                float a = uSkyBlur * (0.5 - float(k) / float(blurTaps - 1));
                 float c = cos(a), s = sin(a);
                 gSun = vec3(c * uSunDir.x - s * uSunDir.z, uSunDir.y, s * uSunDir.x + c * uSunDir.z);
                 gMoonPos = vec3(c * uMoonPos.x - s * uMoonPos.z, uMoonPos.y, s * uMoonPos.x + c * uMoonPos.z);
-                vec4 moon = moonBody(ro, rd);
-                acc += mix(backdrop, moon.rgb, moon.a) + sunBody(rd) * (1.0 - moon.a);
+                vec4 moon = noMoon ? vec4(0.0) : moonBody(ro, rd);
+                vec3 sun = noSun ? vec3(0.0) : sunBody(rd);
+                acc += mix(backdrop, moon.rgb, moon.a) + sun * (1.0 - moon.a);
             }
-            sky = acc / float(BLUR_TAPS) * airT;
+            sky = acc / float(blurTaps) * airT;
         }
     }
     vec3 col = mix(airLight + sky, groundTotal, covE);
     col = mix(col, cloudTotal, alphaC * covC);
     col = mix(col, cirrusTotal, alphaH * covH);
 
-    if ((uSkip & SKIP_AURORA) == 0) col += aurora(ro, rd, tca, d2);
-    if ((uSkip & SKIP_UPPER_AIR) == 0) col += upperAtmosphere(ro, rd, tca, d2, fw); // the emission shells in front of the planet's night side and along the limb
+    if ((uSkip & SKIP_AURORA) == 0) col += aurora(ro, rd, tca, d2, airT, fw);
+    if ((uSkip & SKIP_UPPER_AIR) == 0) col += upperAtmosphere(ro, rd, tca, d2, fw, airT); // the emission shells in front of the planet's night side and along the limb
 
 #ifdef HDR_OUT
     outColor = vec4(col, 1.0); // linear light; resolve.frag tone maps, encodes and dithers

@@ -6,11 +6,11 @@
   // fill: the Earth's diameter as a fraction of the screen height; starSigma and starLimit are compiled into the shader.
   const settings = {
     fps: 30, scale: 1.0, fill: 0.9, starSigma: 0.7, starLimit: 10.0,
-    periodMinutes: 24, direction: 1, latitude: 21.4, starGain: 1, flashRate: 1, cloudSpeed: 100, cloudDirection: 1,
+    periodMinutes: 24, direction: 1, latitude: 21.4, physicalSky: false, starGain: 1, flashRate: 1, tier: 0, quality: 0, cloudSpeed: 100, cloudDirection: 1,
     off: {}, // effect name -> true while the effect is switched off
   };
   // SKIP_* bits of earth.frag for the effects that can be switched off
-  const SKIP_BITS = { aurora: 16, lightning: 2048, airglow: 1024, cirrus: 4096, clouds: 256, citylights: 512, sharpclouds: 64, sunmoonblur: 8192 };
+  const SKIP_BITS = { aurora: 16, lightning: 2048, airglow: 1024, cirrus: 4096, clouds: 256, citylights: 512, sharpclouds: 64, sunmoonblur: 8192, sun: 32, moon: 16384 };
   const skipMask = () => Object.keys(SKIP_BITS).reduce((m, k) => (settings.off[k] ? m | SKIP_BITS[k] : m), 0);
   // The camera is as far away as in the phone app (Earth fills 92 % of a 1280x2856 screen with a 30 degree vertical field),
   // so perspective, atmosphere, star density and sky detail match; only the field of view follows the screen's shape.
@@ -44,7 +44,10 @@
       x.send();
     });
   }
-  const image = (url) => get(url, 'blob').then((b) => createImageBitmap(b, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }));
+  // width: scale the picture down while decoding (2:1 maps), for the low quality tier
+  const image = (url, width) => get(url, 'blob').then((b) => createImageBitmap(b, {
+    premultiplyAlpha: 'none', colorSpaceConversion: 'none', ...(width ? { resizeWidth: width, resizeHeight: width / 2, resizeQuality: 'high' } : {}),
+  }));
 
   const INCLUDE = /^\s*#include "([^"]+)"\s*$/gm;
   async function shader(name) {
@@ -120,7 +123,18 @@
   }
 
   const UNIT = { day: 0, night: 1, topo: 2, clouds: 3, cells: 4, stars: 5, milky: 6, colors: 7, moon: 8, hdr: 9, atmo: 10 };
-  let progScene, progResolve, hdrTex, hdrFbo, dayTex = null, dayMonth = 0;
+  let progScene, progResolve, hdrTex, hdrFbo, dayTex = null, dayMonth = 0, nightTex = null, topoTex = null, cloudsTex = null, milkyTex = null, groundReady = false, reloading = false;
+  // Map quality (tier): 0 standard (4096 x 2048 day, night and relief, 8192 clouds and Milky Way), 1 high (8192 day and relief, in
+  // assets_hi; about 270 MB more graphics memory; night stays at 4096: its lights are smaller than a screen pixel at 8192 and look
+  // weaker there), 2 low (2048 day, night and relief, 4096 clouds and Milky Way, the same files scaled down while decoding; about
+  // half the graphics memory, for weak PCs and 1080p). At 1440p standard and high look the same; high shows more at 4K.
+  const hiAvailable = gl.getParameter(gl.MAX_TEXTURE_SIZE) >= 8192;
+  const wantTier = () => (settings.tier === 1 && !hiAvailable ? 0 : settings.tier);
+  let groundTier = 0; // the quality the loaded maps have
+  const groundUrl = (name, tier = groundTier) => (tier === 1 && name !== 'night.jpg' ? 'assets_hi/' : 'assets/') + name;
+  const groundWidth = (tier = groundTier) => (tier === 2 ? 2048 : 0);
+  const bigWidth = (tier = groundTier) => (tier === 2 ? 4096 : 0); // clouds and Milky Way
+  function ensureGround() { if (groundReady && !reloading && wantTier() !== groundTier) reloadGround(); }
 
   async function loadAtmosphere() {
     const [tr, r, m, ms] = await Promise.all(['transmittance', 'scatter_r', 'scatter_m', 'scatter_ms'].map((n) => get('assets/atmosphere_' + n + '.bin', 'arraybuffer')));
@@ -157,8 +171,26 @@
     exact(gl.TEXTURE_2D);
   }
 
+  async function reloadGround() { // the map quality changed: the same maps again at the other size
+    if (reloading) return;
+    reloading = true;
+    try {
+      groundTier = wantTier();
+      const [night, topo, clouds, milky] = await Promise.all([
+        image(groundUrl('night.jpg'), groundWidth()), image(groundUrl('topo.webp'), groundWidth()),
+        image('assets/clouds.jpg', bigWidth()), image('assets/milkyway.webp', bigWidth())]);
+      nightTex = uploadImage(UNIT.night, night, gl.SRGB8_ALPHA8, nightTex);
+      topoTex = uploadImage(UNIT.topo, topo, gl.RGBA8, topoTex);
+      cloudsTex = uploadImage(UNIT.clouds, clouds, gl.R8, cloudsTex);
+      milkyTex = uploadImage(UNIT.milky, milky, gl.RGBA8, milkyTex);
+      [night, topo, clouds, milky].forEach((b) => b.close());
+      await loadMonth(dayMonth || Astro.month(fixedMs || Date.now()));
+    } finally { reloading = false; }
+    ensureGround(); // the property may have changed again meanwhile
+  }
+
   async function loadMonth(month) { // snow line, sea ice and vegetation follow the calendar: the Blue Marble month of today
-    const bmp = await image('assets/day_' + String(month).padStart(2, '0') + '.jpg');
+    const bmp = await image(groundUrl('day_' + String(month).padStart(2, '0') + '.jpg'), groundWidth());
     dayTex = uploadImage(UNIT.day, bmp, gl.SRGB8_ALPHA8, dayTex);
     bmp.close();
     dayMonth = month;
@@ -198,20 +230,29 @@
     tanX = tanY * width / height;
   }
 
-  // The cloud layer's drift against the ground in turns (a lap takes an hour at 100 %; negative: westward)
-  function cloudShift(sec) {
-    const rate = settings.cloudSpeed / 100 * settings.cloudDirection;
-    if (rate === 0) return 0;
-    const lap = 3600 / Math.abs(rate);
-    return Math.sign(rate) * (sec % lap) / lap;
+  // The camera's angle on its orbit and the clouds' drift follow the clock. A new orbit time, direction, cloud speed or direction
+  // would throw them to some other place, so a change keeps them where they are (keepPlace) and goes on from there; the latitude is
+  // flown to over a fraction of a second (latNow) instead of jumped to.
+  let lastMs = null, orbitPhase = 0, cloudOffset = 0, latNow = 0;
+  const periodS = () => settings.periodMinutes * 60;
+  const cloudTurns = (sec) => settings.cloudSpeed / 100 * settings.cloudDirection * sec / 3600;
+  function keepPlace(change) {
+    if (lastMs === null) { change(); return; }
+    const jd = Astro.julianDate(lastMs), sec = lastMs / 1000;
+    const angle = Astro.orbitAngle(jd, periodS(), settings.direction, orbitPhase), clouds = cloudTurns(sec) + cloudOffset;
+    change();
+    orbitPhase = angle - Astro.orbitAngle(jd, periodS(), settings.direction);
+    cloudOffset = clouds - cloudTurns(sec);
   }
+  // The cloud layer's drift against the ground in turns (a lap takes an hour at 100 %; negative: westward)
+  const cloudShift = (sec) => (((cloudTurns(sec) + cloudOffset) % 1) + 1) % 1;
 
   // How far the camera turned about the north axis during one frame: the Sun and the Moon are smeared over it, so they glide
   // instead of jumping at low frame rates (earth.frag, uSkyBlur)
   function cameraTurn(jd, d, period) {
     const frame = 1 / settings.fps;
-    const a = Astro.orbitPose(jd, d, settings.latitude, period, settings.direction).position;
-    const b = Astro.orbitPose(jd - frame / 86400, d, settings.latitude, period, settings.direction).position;
+    const a = Astro.orbitPose(jd, d, latNow, period, settings.direction, orbitPhase).position;
+    const b = Astro.orbitPose(jd - frame / 86400, d, latNow, period, settings.direction, orbitPhase).position;
     let turn = Math.atan2(a[2], a[0]) - Math.atan2(b[2], b[0]);
     while (turn > Math.PI) turn -= 2 * Math.PI;
     while (turn < -Math.PI) turn += 2 * Math.PI;
@@ -222,8 +263,11 @@
     const month = Astro.month(nowMs);
     if (month !== dayMonth && !draw.loading) { draw.loading = true; loadMonth(month).finally(() => { draw.loading = false; }); }
     const s = Astro.scene(nowMs);
-    const period = settings.periodMinutes * 60;
-    const pose = Astro.orbitPose(s.jd, dist, settings.latitude, period, settings.direction);
+    const period = periodS();
+    const dtSec = lastMs === null ? 0 : Math.min(Math.abs(nowMs - lastMs) / 1000, 1);
+    latNow = lastMs === null || fixedMs ? settings.latitude : latNow + (settings.latitude - latNow) * (1 - Math.exp(-dtSec / 0.12));
+    lastMs = nowMs;
+    const pose = Astro.orbitPose(s.jd, dist, latNow, period, settings.direction, orbitPhase);
     const sec = nowMs / 1000;
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, hdrFbo);
@@ -231,11 +275,17 @@
     gl.useProgram(progScene);
     const u3 = (n, v) => gl.uniform3f(loc(progScene, n), v[0], v[1], v[2]);
     u3('uCamPos', pose.position); u3('uCamRight', pose.right); u3('uCamUp', pose.up); u3('uCamFwd', pose.forward);
-    gl.uniformMatrix3fv(loc(progScene, 'uSkyRot'), false, Astro.skyMatrix(s.jd, pose));
+    // the stars are placed as seen from the default latitude, whatever the camera's: a new latitude moves them on the screen
+    // with the Moon and the Sun, as the real sky would move, instead of leaving them where they were
+    // physicalSky: the stars stand in space like the Moon and move with the camera's orbit; else they are fixed to the picture and
+    // drift slowly (placed as seen from the default latitude, so that a new latitude still moves them with the Moon)
+    gl.uniformMatrix3fv(loc(progScene, 'uSkyRot'), false, settings.physicalSky ? Astro.skyMatrixInertial(s.jd)
+      : Astro.skyMatrix(s.jd, Astro.orbitPose(s.jd, dist, Astro.LATITUDE_DEG, period, settings.direction, orbitPhase)));
     gl.uniform1f(loc(progScene, 'uCloudShift'), cloudShift(sec));
     gl.uniform1i(loc(progScene, 'uSkip'), skipMask());
     gl.uniform1f(loc(progScene, 'uStarGain'), settings.starGain);
     gl.uniform1f(loc(progScene, 'uFlashRate'), settings.flashRate);
+    gl.uniform1i(loc(progScene, 'uQuality'), settings.quality);
     gl.uniform1f(loc(progScene, 'uSkyBlur'), cameraTurn(s.jd, dist, period));
     gl.uniform1f(loc(progScene, 'uAuroraPhase'), (sec % 120) / 120);
     gl.uniform1f(loc(progScene, 'uTime'), sec % 3600);
@@ -275,13 +325,16 @@
   }
   let rebuilding = false;
   async function rebuildScene() { // the star width is compiled in: a new render scale needs it again
-    if (rebuilding || !progScene || Math.abs(height / 1440 / builtK - 1) < 0.05) return;
+    if (rebuilding || !progScene) return;
     rebuilding = true;
     try {
-      const next = await ready(sceneProgram());
-      gl.deleteProgram(progScene);
-      progScene = next;
-      sceneUniforms();
+      // Wallpaper Engine sends every step of the slider; a change that arrives during a compile is picked up by this loop
+      while (Math.abs(height / 1440 / builtK - 1) >= 0.05) {
+        const next = await ready(sceneProgram());
+        gl.deleteProgram(progScene);
+        progScene = next;
+        sceneUniforms();
+      }
     } finally { rebuilding = false; }
   }
 
@@ -294,14 +347,18 @@
     const pResolve = program(vs, rs, 'resolve.frag');
 
     const day = Astro.month(fixedMs || Date.now());
-    const [night, topo, clouds, milky, moon] = await Promise.all(['night.jpg', 'topo.webp', 'clouds.jpg', 'milkyway.webp', 'moon.jpg'].map((n) => image('assets/' + n)));
-    uploadImage(UNIT.night, night, gl.SRGB8_ALPHA8);
-    uploadImage(UNIT.topo, topo, gl.RGBA8);
-    uploadImage(UNIT.clouds, clouds, gl.R8);
-    uploadImage(UNIT.milky, milky, gl.RGBA8);
+    groundTier = wantTier();
+    const [night, topo, clouds, milky, moon] = await Promise.all([
+      image(groundUrl('night.jpg'), groundWidth()), image(groundUrl('topo.webp'), groundWidth()),
+      image('assets/clouds.jpg', bigWidth()), image('assets/milkyway.webp', bigWidth()), image('assets/moon.jpg')]);
+    nightTex = uploadImage(UNIT.night, night, gl.SRGB8_ALPHA8);
+    topoTex = uploadImage(UNIT.topo, topo, gl.RGBA8);
+    cloudsTex = uploadImage(UNIT.clouds, clouds, gl.R8);
+    milkyTex = uploadImage(UNIT.milky, milky, gl.RGBA8);
     uploadImage(UNIT.moon, moon, gl.SRGB8_ALPHA8);
     [night, topo, clouds, milky, moon].forEach((b) => b.close());
     await Promise.all([loadMonth(day), loadAtmosphere(), loadStars()]);
+    groundReady = true;
 
     say('Compiling the shader (once, can take a little while) ...');
     progScene = await ready(pScene);
@@ -338,6 +395,20 @@
       document.title = 'bench ' + width + 'x' + height + ' median ' + times[times.length >> 1].toFixed(1) + ' ms, min ' + times[0].toFixed(1) + ', max ' + times[times.length - 1].toFixed(1);
       return;
     }
+    if (params.has('test')) { // ?test=1: draws on demand and returns a checksum of the picture, to check that every property changes it
+      window.__test = {
+        size: () => [width, height, screenW, screenH],
+        snap() {
+          draw(fixedMs || Date.now());
+          const w = screenW, h = screenH, px = new Uint8Array(w * h * 4);
+          gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          let hash = 2166136261 >>> 0, sum = 0;
+          for (let i = 0; i < px.length; i += 4) { sum += px[i] + px[i + 1] + px[i + 2]; hash = Math.imul(hash ^ (px[i] + 7 * px[i + 1] + 31 * px[i + 2]), 16777619) >>> 0; }
+          return { hash, mean: +(sum / (w * h * 3)).toFixed(3) };
+        },
+      };
+      return;
+    }
     if (params.has('capture')) { // a hidden page gets no animation frames: draw directly, then post the picture to tools/web_server.py
       resize();
       draw(fixedMs || Date.now());
@@ -353,14 +424,17 @@
   const handlers = {
     fps: (v) => { settings.fps = num(v); },
     renderscale: (v) => { settings.scale = num(v); resize(); rebuildScene(); },
+    effectquality: (v) => { settings.quality = { '1': 1, '2': 2 }[String(v)] ?? 0; },
+    texturequality: (v) => { settings.tier = { '1': 1, '2': 2 }[String(v)] ?? 0; ensureGround(); },
     earthsize: (v) => { settings.fill = num(v) / 100; width = 0; resize(); }, // width = 0 forces the geometry to be redone
-    orbitminutes: (v) => { settings.periodMinutes = num(v); },
-    orbitdirection: (v) => { settings.direction = String(v) === '1' ? -1 : 1; },
+    orbitminutes: (v) => keepPlace(() => { settings.periodMinutes = num(v); }),
+    orbitdirection: (v) => keepPlace(() => { settings.direction = String(v) === '1' ? -1 : 1; }),
     latitude: (v) => { settings.latitude = num(v); },
+    skymotion: (v) => { settings.physicalSky = String(v) === '1'; },
     starbrightness: (v) => { settings.starGain = num(v) / 100; },
     lightningrate: (v) => { settings.flashRate = num(v) / 100; },
-    cloudspeed: (v) => { settings.cloudSpeed = num(v); },
-    clouddirection: (v) => { settings.cloudDirection = String(v) === '1' ? -1 : 1; },
+    cloudspeed: (v) => keepPlace(() => { settings.cloudSpeed = num(v); }),
+    clouddirection: (v) => keepPlace(() => { settings.cloudDirection = String(v) === '1' ? -1 : 1; }),
   };
   for (const k in SKIP_BITS) handlers[k] = (v) => { settings.off[k] = !(v === true || v === 'true' || v === 1); }; // switches: on by default
   window.wallpaperPropertyListener = {

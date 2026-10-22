@@ -168,9 +168,9 @@ class EarthWallpaperService : WallpaperService() {
             )
             val variants = listOf(
                 "everything on" to 0, "no stars" to 1, "no Milky Way" to 2, "no atmosphere (back)" to 4,
-                "no atmosphere (front)" to 8, "no aurora" to 16, "no Sun and Moon" to 32, "1 cloud tap instead of 4" to 64,
+                "no atmosphere (front)" to 8, "no aurora" to 16, "no Sun and Moon" to (32 or 16384), "1 cloud tap instead of 4" to 64,
                 "no cloud relief" to 128, "no clouds" to (256 or 128), "no city lights" to 512, "no airglow and noctilucent clouds" to 1024, "no lightning" to 2048,
-                "nothing but the planet and sky" to 4095,
+                "nothing but the planet and sky" to 4095, "effects quality medium" to 0, "effects quality low" to 0,
             )
             Log.i(TAG, "PROFILE start: ${scenes.size} scenes x ${variants.size} variants")
             for ((scene, time) in scenes) {
@@ -186,6 +186,7 @@ class EarthWallpaperService : WallpaperService() {
                     // the variant that follows it
                     variants.indices.shuffled(shuffler).forEach { index ->
                         r.skipMask = variants[index].second
+                        r.qualityOverride = when (variants[index].first) { "effects quality medium" -> 1; "effects quality low" -> 2; else -> -1 }
                         val t0 = SystemClock.elapsedRealtimeNanos()
                         r.draw(nowMs)
                         GLES30.glFinish()
@@ -197,6 +198,7 @@ class EarthWallpaperService : WallpaperService() {
                 for ((name, ms) in medians) Log.i(TAG, "PROFILE | %-22s | %-32s | %6.1f ms | %+6.1f ms".format(scene, name, ms, ms - full))
             }
             r.skipMask = 0
+            r.qualityOverride = -1
             Log.i(TAG, "PROFILE done")
         }
 

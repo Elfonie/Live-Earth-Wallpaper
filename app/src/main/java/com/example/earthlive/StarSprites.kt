@@ -18,6 +18,8 @@ class StarSprites(private val table: SkyData.Table) {
     private var count = 0
     private var builtAtMs = Long.MIN_VALUE
     var rebuilt = false // set by update() when it rebuilt the list; the caller may log it and clear it
+    @Volatile var magLimit = 99f // fainter stars are left out (the user's effects quality)
+    @Volatile var sweepSpeed = 0.0 // radians per second the view turns against the sky (the real sky follows the orbit): a faster refresh and a wider margin
 
     /** Number of stars in the current list, and how long the last rebuild took (for the debug log). */
     val visibleCount get() = count
@@ -71,17 +73,20 @@ class StarSprites(private val table: SkyData.Table) {
             inFlight = false
             upload(built)
         }
-        if (inFlight || Math.abs(nowMs - builtAtMs) < REBUILD_MS) return
+        val rebuildMs = if (sweepSpeed > SWEEP_FAST) FAST_REBUILD_MS else REBUILD_MS
+        if (inFlight || Math.abs(nowMs - builtAtMs) < rebuildMs) return
         builtAtMs = nowMs
+        // the sky moves on by this much of the half screen before the next list is in use
+        val margin = (MARGIN + sweepSpeed * (rebuildMs / 1000.0 + 0.5) / tanHalfX).coerceAtMost(1.5)
         val skyCopy = sky.clone()
         val rightCopy = right.clone()
         val upCopy = up.clone()
         val forwardCopy = forward.clone()
         if (count == 0) {
-            upload(build(skyCopy, rightCopy, upCopy, forwardCopy, tanHalfX, tanHalfY))
+            upload(build(skyCopy, rightCopy, upCopy, forwardCopy, tanHalfX, tanHalfY, margin))
         } else {
             inFlight = true
-            worker.execute { ready = build(skyCopy, rightCopy, upCopy, forwardCopy, tanHalfX, tanHalfY) }
+            worker.execute { ready = build(skyCopy, rightCopy, upCopy, forwardCopy, tanHalfX, tanHalfY, margin) }
         }
     }
 
@@ -106,7 +111,7 @@ class StarSprites(private val table: SkyData.Table) {
     }
 
     /** CPU only, safe on any thread. */
-    private fun build(sky: DoubleArray, right: DoubleArray, up: DoubleArray, forward: DoubleArray, tanHalfX: Double, tanHalfY: Double): Built {
+    private fun build(sky: DoubleArray, right: DoubleArray, up: DoubleArray, forward: DoubleArray, tanHalfX: Double, tanHalfY: Double, margin: Double): Built {
         val started = System.nanoTime()
         // The camera axes in J2000: a star at J2000 direction s is at x = s.R / (s.F tanX), y = s.U / (s.F tanY)
         val r = rotate(sky, right)
@@ -116,7 +121,8 @@ class StarSprites(private val table: SkyData.Table) {
         val cells = table.cells.asIntBuffer()
         var out = scratch
         var n = 0
-        val bounds = cellBounds(sky, right, up, forward, tanHalfX, tanHalfY)
+        val bounds = cellBounds(sky, right, up, forward, tanHalfX, tanHalfY, margin)
+        val limit = magLimit
         for (cy in bounds.rowFrom..bounds.rowTo) {
             val cd = cosDec[cy]
             val sd = sinDec[cy]
@@ -131,9 +137,10 @@ class StarSprites(private val table: SkyData.Table) {
                 if (depth <= 0.0) continue
                 val x = (sx * r[0] + sy * r[1] + sd * r[2]) / (depth * tanHalfX)
                 val y = (sx * u[0] + sy * u[1] + sd * u[2]) / (depth * tanHalfY)
-                if (Math.abs(x) > 1.0 + MARGIN || Math.abs(y) > 1.0 + MARGIN) continue
+                if (Math.abs(x) > 1.0 + margin || Math.abs(y) > 1.0 + margin) continue
                 val first = cells.get(cell * 2)
                 for (k in 0 until starCount) {
+                    if ((table.stars.getInt((first + k) * 8 + 4) and 255) / 16f - 2f > limit) continue
                     if ((n + 1) * FLOATS > out.size) out = out.copyOf(out.size * 2)
                     n = addStar(out, n, first + k, cx, cy)
                 }
@@ -180,7 +187,7 @@ class StarSprites(private val table: SkyData.Table) {
      * a margin on top) turned into J2000 declination and right ascension, so that only some thousand of the million
      * cells are looked at. A view that contains a celestial pole covers every right ascension.
      */
-    private fun cellBounds(sky: DoubleArray, right: DoubleArray, up: DoubleArray, forward: DoubleArray, tanX: Double, tanY: Double): Bounds {
+    private fun cellBounds(sky: DoubleArray, right: DoubleArray, up: DoubleArray, forward: DoubleArray, tanX: Double, tanY: Double, margin: Double): Bounds {
         val steps = 8
         var decMin = Double.MAX_VALUE
         var decMax = -Double.MAX_VALUE
@@ -188,8 +195,8 @@ class StarSprites(private val table: SkyData.Table) {
         var k = 0
         for (i in 0..steps) {
             for (j in 0..steps) {
-                val x = (i / steps.toDouble() * 2 - 1) * (1 + MARGIN)
-                val y = (j / steps.toDouble() * 2 - 1) * (1 + MARGIN)
+                val x = (i / steps.toDouble() * 2 - 1) * (1 + margin)
+                val y = (j / steps.toDouble() * 2 - 1) * (1 + margin)
                 val w = DoubleArray(3) { forward[it] + x * tanX * right[it] + y * tanY * up[it] }
                 val s = rotate(sky, w)
                 val len = Math.sqrt(s[0] * s[0] + s[1] * s[1] + s[2] * s[2])
@@ -204,8 +211,8 @@ class StarSprites(private val table: SkyData.Table) {
             val p = doubleArrayOf(0.0, 0.0, sign)
             val w = DoubleArray(3) { sky[0 * 3 + it] * p[0] + sky[1 * 3 + it] * p[1] + sky[2 * 3 + it] * p[2] } // F^T p
             val f = w[0] * forward[0] + w[1] * forward[1] + w[2] * forward[2]
-            f > 0 && Math.abs((w[0] * right[0] + w[1] * right[1] + w[2] * right[2]) / (f * tanX)) < 1 + MARGIN &&
-                Math.abs((w[0] * up[0] + w[1] * up[1] + w[2] * up[2]) / (f * tanY)) < 1 + MARGIN
+            f > 0 && Math.abs((w[0] * right[0] + w[1] * right[1] + w[2] * right[2]) / (f * tanX)) < 1 + margin &&
+                Math.abs((w[0] * up[0] + w[1] * up[1] + w[2] * up[2]) / (f * tanY)) < 1 + margin
         }
         val rowMargin = 2 // cells (0.5 degrees)
         var rowFrom = ((decMin + Math.PI / 2) / cellRad).toInt() - rowMargin
@@ -241,5 +248,7 @@ class StarSprites(private val table: SkyData.Table) {
         const val STRIDE = FLOATS * 4
         const val REBUILD_MS = 10_000L
         const val MARGIN = 0.15 // of the half screen: the sky drifts ~0.1 of it in the 10 s between rebuilds
+        const val FAST_REBUILD_MS = 2_000L // the real sky of a quick orbit
+        const val SWEEP_FAST = 0.002 // rad/s; the slow drift is 0.0006
     }
 }

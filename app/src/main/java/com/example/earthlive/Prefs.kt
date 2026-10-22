@@ -7,7 +7,7 @@ import android.content.SharedPreferences
 object Prefs {
     const val FILE = "earth_live"
     const val EARTH_SIZE = "earth_size"           // percent of the screen width, 70..100
-    const val ORBIT_MINUTES = "orbit_minutes"      // one lap around the Earth, 6..120
+    const val ORBIT_MINUTES = "orbit_minutes"      // one lap around the Earth, 1..120
     const val LATITUDE = "latitude"               // degrees, -60..60: the camera circles at this latitude
     const val STAR_BRIGHTNESS = "star_brightness" // percent, 25..150
     const val FPS = "fps"                         // one of FPS_CHOICES
@@ -15,6 +15,9 @@ object Prefs {
     const val CLOUD_SPEED = "cloud_speed_percent" // 0..300; 100 = the clouds go once around the Earth in an hour
     const val CLOUD_DIRECTION = "cloud_direction" // 0 towards the east (as in reality), 1 towards the west
     const val ORBIT_DIRECTION = "orbit_direction" // 0: the surface moves from left to right (the Earth's own turning), 1: the other way
+    const val SKY_MOTION = "sky_motion"           // 0 slow drift (default): the stars hang on the picture and creep; 1 real sky: they stand in space and follow the orbit
+    const val EFFECT_QUALITY = "effect_quality"   // 0 high, 1 medium, 2 low: fewer shells, samples and faint stars, nothing switched off
+    const val MAP_QUALITY = "map_quality"         // 0 standard, 1 low: the maps are loaded one mip level smaller (a quarter of the memory)
     const val LIGHTNING_RATE = "lightning_rate"   // percent, 25..500: how often the lightning flashes; 100 = as designed
     const val LAST_ERROR = "last_error"
 
@@ -32,7 +35,7 @@ object Prefs {
     /** Feature switch key -> the SKIP_* bit of earth.frag that is set while the feature is off. */
     val FEATURES: Map<String, Int> = linkedMapOf(
         "aurora" to 16, "lightning" to 2048, "airglow" to 1024, "cirrus" to 4096, "clouds" to 256, "city_lights" to 512,
-        "sharp_clouds" to 64, "sun_moon_blur" to 8192,
+        "sharp_clouds" to 64, "sun_moon_blur" to 8192, "sun" to 32, "moon" to 16384,
     )
 
     class Values(
@@ -40,11 +43,14 @@ object Prefs {
         val periodSeconds: Double,
         val latitudeDeg: Double,
         val starGain: Float,
+        val quality: Int, // effects quality: 0 high, 1 medium, 2 low
+        val mapSkip: Int, // mip levels left out of the big maps: 0 standard, 1 low
         val flashRate: Float,
         val fps: Int,
         val renderScale: Double,
         val cloudRate: Double, // laps per CLOUD_LAP_SECONDS; negative: towards the west; 0: still
         val orbitDirection: Int, // 1 or -1
+        val realSky: Boolean, // the stars stand in space like the Moon (else a slow drift)
         val skipMask: Int,
     )
 
@@ -54,20 +60,23 @@ object Prefs {
 
     fun read(prefs: SharedPreferences) = Values(
         fill = prefs.getInt(EARTH_SIZE, DEFAULT_SIZE).coerceIn(70, 100) / 100.0,
-        periodSeconds = prefs.getInt(ORBIT_MINUTES, DEFAULT_ORBIT).coerceIn(6, 120) * 60.0,
+        periodSeconds = prefs.getInt(ORBIT_MINUTES, DEFAULT_ORBIT).coerceIn(1, 120) * 60.0,
         latitudeDeg = prefs.getFloat(LATITUDE, DEFAULT_LATITUDE).coerceIn(-60f, 60f).toDouble(),
         starGain = prefs.getInt(STAR_BRIGHTNESS, DEFAULT_STARS).coerceIn(25, 150) / 100f,
         flashRate = prefs.getInt(LIGHTNING_RATE, DEFAULT_LIGHTNING_RATE).coerceIn(25, 500) / 100f,
+        quality = prefs.getInt(EFFECT_QUALITY, 0).coerceIn(0, 2),
+        mapSkip = if (prefs.getInt(MAP_QUALITY, 0) == 1) 1 else 0,
         fps = prefs.getInt(FPS, DEFAULT_FPS).takeIf { it in FPS_CHOICES } ?: DEFAULT_FPS,
         renderScale = prefs.getInt(RENDER_SCALE, DEFAULT_RENDER_SCALE).coerceIn(50, 100) / 100.0,
         cloudRate = prefs.getInt(CLOUD_SPEED, DEFAULT_CLOUD_SPEED).coerceIn(0, 300) / 100.0 * (if (prefs.getInt(CLOUD_DIRECTION, 0) == 1) -1 else 1),
         orbitDirection = if (prefs.getInt(ORBIT_DIRECTION, 0) == 1) -1 else 1,
+        realSky = prefs.getInt(SKY_MOTION, 0) == 1,
         skipMask = skipMask { prefs.getBoolean(it, true) },
     )
 
     fun reset(prefs: SharedPreferences) {
         prefs.edit().apply {
-            listOf(EARTH_SIZE, ORBIT_MINUTES, ORBIT_DIRECTION, LATITUDE, STAR_BRIGHTNESS, LIGHTNING_RATE, FPS, RENDER_SCALE, CLOUD_SPEED, CLOUD_DIRECTION, "cloud_speed").plus(FEATURES.keys).forEach(::remove)
+            listOf(EARTH_SIZE, ORBIT_MINUTES, ORBIT_DIRECTION, SKY_MOTION, LATITUDE, STAR_BRIGHTNESS, LIGHTNING_RATE, EFFECT_QUALITY, MAP_QUALITY, FPS, RENDER_SCALE, CLOUD_SPEED, CLOUD_DIRECTION, "cloud_speed").plus(FEATURES.keys).forEach(::remove)
         }.apply()
     }
 

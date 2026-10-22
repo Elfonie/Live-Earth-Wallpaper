@@ -15,24 +15,30 @@ import kotlin.math.tan
  */
 class OrbitCamera(
     private val distance: Double,
-    private val latitudeDeg: Double = LATITUDE_DEG,
+    var latitudeDeg: Double = LATITUDE_DEG, // the renderer eases it towards a new setting
     private val periodSeconds: Double = PERIOD_SECONDS,
     private val direction: Int = 1, // -1 flies the orbit the other way round
 ) {
+    /** Added to the angle on the orbit: set when a setting changes, so that the camera stays where it is. */
+    var phase = 0.0
+
+    /** Angle on the orbit in radians (0 towards the vernal equinox). */
+    fun angle(jd: Double): Double = direction * ((jd - J2000) * 86400.0 % periodSeconds) / periodSeconds * 2 * PI + phase
+
     /** Camera position (Earth radii) and orthonormal view basis in the Earth-fixed frame. */
     class Pose(val position: DoubleArray, val forward: DoubleArray, val right: DoubleArray, val up: DoubleArray)
 
     /** Position on the orbit in the inertial equatorial frame (x to the vernal equinox, z to the pole). */
-    fun inertialPosition(jd: Double): DoubleArray {
-        val seconds = (jd - J2000) * 86400.0
-        val u = direction * (seconds % periodSeconds) / periodSeconds * 2 * PI
-        val lat = Math.toRadians(latitudeDeg)
+    fun inertialPosition(jd: Double, latitude: Double = latitudeDeg): DoubleArray {
+        val u = angle(jd)
+        val lat = Math.toRadians(latitude)
         return doubleArrayOf(distance * cos(lat) * cos(u), -distance * cos(lat) * sin(u), distance * sin(lat)) // westward: the surface slides from Africa towards Asia
     }
 
-    fun pose(jd: Double): Pose {
+    /** The pose at [latitude] (the camera's own by default) on the same orbit angle: the sky is placed with the one at the default latitude. */
+    fun pose(jd: Double, latitude: Double = latitudeDeg): Pose {
         val e = Astronomy.earthRotation(jd)
-        val inertial = inertialPosition(jd)
+        val inertial = inertialPosition(jd, latitude)
         val position = DoubleArray(3) { e[it * 3] * inertial[0] + e[it * 3 + 1] * inertial[1] + e[it * 3 + 2] * inertial[2] }
         val toCamera = normalize(position)
         // The north pole direction, projected into the image plane

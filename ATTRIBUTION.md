@@ -59,8 +59,9 @@ works or non-US law.
 
 ## What was changed (as the licenses require you to say)
 
-- Day, night and Moon maps: resized to 4096x2048 (Moon 2048x1024), converted to ASTC (Android) or JPEG (PC).
-- Elevation: resized, turned into a relief normal map and an ocean mask (elevation exactly 0, minus bright sea ice from the day map).
+- Android: day, night and Moon maps resized to 4096x2048 (Moon 2048x1024), converted to ASTC.
+- PC: day maps resized from the 21600x10800 Blue Marble files to 8192x4096 (JPEG) or 4096x2048 (the "Standard" map quality); night and Moon maps as on Android (JPEG).
+- Elevation: resized (4096x2048 on Android, 8192x4096 on PC), turned into a relief normal map and an ocean mask (elevation exactly 0, minus bright sea ice from the day map).
 - Clouds: converted to greyscale, mip-mapped, compressed (ASTC / JPEG).
 - Milky Way: the point sources were removed (grey opening) so that only the diffuse band remains; resized, gamma encoded, compressed.
 - Stars: filtered to about 870,000 stars brighter than magnitude 11, positions propagated to epoch 2026.0, colours derived from the catalog colour index (B-V; for Tycho-2 stars the catalog's `ci` is BT-VT), packed into `sky_stars.bin` (see `tools/make_sky.py`).
