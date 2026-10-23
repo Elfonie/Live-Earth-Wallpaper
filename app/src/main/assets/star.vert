@@ -16,6 +16,7 @@ uniform vec3 uCamFwd;
 uniform vec2 uTanHalf;
 uniform float uTime;
 uniform float uStarGain;
+uniform float uStarSize;    // the user's star size, 1 = as drawn by default: above 1 the bright core grows, below 1 the points get sharper
 uniform float uRenderScale; // the buffer's size as a fraction of the screen's: a star keeps its size on the screen
 uniform sampler2D uStarColors;
 
@@ -25,15 +26,19 @@ uniform sampler2D uStarColors;
 out vec3 vColour;
 out float vSigma;
 out float vSize;
+out float vCore;
 
 void main() {
     vec3 rd = transpose(uSkyRot) * aDirMag.xyz; // the star's direction in the renderer frame
     float f = dot(rd, uCamFwd);
     float mag = aDirMag.w;
-    float sigma = starSigma(mag) * uRenderScale;
+    float shrink = min(uStarSize, 1.0);
+    float sigma = starSigma(mag) * uRenderScale * shrink;
+    float core = starSigma(mag) * uRenderScale * 1.2 * max(uStarSize - 1.0, 0.0); // a bigger star: the same soft edge round a wider core
     float s = max(sigma, 0.8); // as sharp as a small buffer allows, and the star keeps its total light (see vColour)
     vSigma = s;
-    vSize = 2.0 * ceil(3.0 * s) + 2.0;
+    vCore = core;
+    vSize = 2.0 * ceil(3.0 * s + core) + 2.0;
     gl_PointSize = vSize;
     if (f <= 0.0) { // behind the camera: push it out of the clip volume
         gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -47,5 +52,5 @@ void main() {
     float limb = 1.0 - pow(air.g, 1.5);
     float flicker = 1.0 + (FLICKER_BASE + FLICKER_LIMB * limb) * twinkle(aTintSeed.y);
     vec3 tint = texelFetch(uStarColors, ivec2(int(aTintSeed.x), 0), 0).rgb;
-    vColour = tint * starPeak(mag) * flicker * air * uStarGain * (sigma * sigma) / (s * s) * limbFade(sqrt(max(dot(uCamPos, uCamPos) - rayTca * rayTca, 0.0)));
+    vColour = tint * starPeak(mag) * flicker * air * uStarGain * (sigma * sigma) / (s * s) / (shrink * shrink) * limbFade(sqrt(max(dot(uCamPos, uCamPos) - rayTca * rayTca, 0.0)));
 }

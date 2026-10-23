@@ -19,9 +19,10 @@
     <string name="status_error_body">The picture could not be drawn: %1$s\n\nOpen the wallpaper again; if this stays, please report it with this text.</string>
 
     <string name="settings_hint">Changes apply at once when Earth Live is your wallpaper.</string>
-    <string name="section_picture">Picture</string>
-    <string name="section_details">What is shown</string>
-    <string name="section_performance">Performance</string>
+    <string name="tab_view">View</string>
+    <string name="tab_space">Space</string>
+    <string name="tab_earth">Earth</string>
+    <string name="tab_quality">Quality</string>
     <string name="earth_size">Earth size</string>
     <string name="earth_size_hint">How much of the screen width the Earth fills.</string>
     <string name="orbit">Orbit time</string>
@@ -32,6 +33,23 @@
     <string name="north">%1$d° N</string>
     <string name="south">%1$d° S</string>
     <string name="equator">Equator</string>
+    <string name="east">%1$d° E</string>
+    <string name="west">%1$d° W</string>
+    <string name="lon_zero">0°</string>
+    <string name="fixed_view">Fixed view</string>
+    <string name="fixed_view_hint">The camera hovers over one place instead of circling the Earth. The Sun, the Moon, the clouds and the time of day keep moving.</string>
+    <string name="longitude">Longitude</string>
+    <string name="longitude_hint">Where the fixed view looks (together with the camera latitude): west of Greenwich negative, east positive.</string>
+    <string name="star_density">Star density</string>
+    <string name="star_density_hint">How many of the catalog stars are drawn. It is a stable subset: the same stars drop out every time.</string>
+    <string name="star_size">Star size</string>
+    <string name="star_size_hint">Above 100 % the bright core of a star grows and its soft edge stays; below 100 % the points get sharper and keep their light.</string>
+    <string name="aurora_strength">Aurora strength</string>
+    <string name="aurora_strength_hint">How bright the aurora is. 100 % is as drawn by default; only has an effect while the aurora is on.</string>
+    <string name="airglow_strength">Airglow strength</string>
+    <string name="airglow_strength_hint">How bright the glow layer along the limb is. The faint ambient night glow and the night clouds are not changed by it.</string>
+    <string name="skyglow">Milky Way and space glow</string>
+    <string name="skyglow_hint">The diffuse Milky Way and zodiacal light. Turn off for stars against a black space background.</string>
     <string name="clouds">Clouds</string>
     <string name="clouds_hint">The moving cloud layer (also switches off cirrus).</string>
     <string name="cirrus">Cirrus clouds</string>

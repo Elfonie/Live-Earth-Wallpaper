@@ -55,6 +55,11 @@ class EarthRenderer(
     private var mapSkip = 0       // mip levels left out of the big maps (the user's map quality)
     private var quality = 0       // effects quality: 0 high, 1 medium, 2 low (uQuality in earth.frag)
     private var realSky = false   // the stars stand in space and follow the camera's orbit (else: a slow drift)
+    private var fixedLongitudeDeg: Double? = null // non-null: the camera hovers over this longitude (no orbit)
+    private var starDensity = 1f
+    private var starSize = 1f
+    private var auroraGain = 1f
+    private var airglowGain = 1f
     private var mapsLoaded = false
     private var camera: OrbitCamera? = null
     private var lastDrawMs = 0L   // a changed setting keeps the camera and the clouds where they were at this time
@@ -70,7 +75,7 @@ class EarthRenderer(
         val forcedOff = debuggable && java.io.File(context.filesDir, "no_hdr").exists() // for A/B comparisons over adb
         useHdr = !forcedOff && ("GL_EXT_color_buffer_float" in extensions || "GL_EXT_color_buffer_half_float" in extensions)
         useSprites = useHdr && !(debuggable && java.io.File(context.filesDir, "no_sprites").exists())
-        val defines = (if (useHdr) "#define HDR_OUT\n" else "") + (if (useSprites) "#define STAR_SPRITES\n" else "")
+        val defines = (if (useHdr) "#define HDR_OUT\n" else "") + (if (useSprites) "#define STAR_SPRITES\n" else "") + "#define USER_GAINS\n"
         program = buildProgram(readAsset("earth.vert"), readShader("earth.frag").replaceFirst(VERSION_LINE, "#version 300 es\n$defines"))
         if (useHdr) resolveProgram = buildProgram(readAsset("earth.vert"), readAsset("resolve.frag"))
         if (useSprites) starProgram = buildProgram(readShader("star.vert"), readShader("star.frag"))
@@ -87,7 +92,7 @@ class EarthRenderer(
             textures[4] = sky.textures[0]
             textures[5] = sky.textures[1]
             textures[7] = sky.textures[2]
-            if (useSprites) sprites = StarSprites(sky.table).also { it.init(); it.magLimit = when (quality) { 0 -> 99f; 1 -> 10.5f else -> 10f }; it.sweepSpeed = if (realSky) 2 * Math.PI / periodSeconds else 0.0 }
+            if (useSprites) sprites = StarSprites(sky.table).also { it.init(); it.magLimit = when (quality) { 0 -> 99f; 1 -> 10.5f else -> 10f }; it.sweepSpeed = if (realSky && fixedLongitudeDeg == null) 2 * Math.PI / periodSeconds else 0.0; it.density = starDensity }
         }
         textures[8] = KtxLoader.load(context, "moon.ktx", 8)
         mapsLoaded = true
@@ -150,7 +155,14 @@ class EarthRenderer(
         frameSeconds = 1.0 / v.fps
         orbitDirection = v.orbitDirection
         realSky = v.realSky
-        sprites?.sweepSpeed = if (realSky) 2 * Math.PI / periodSeconds else 0.0
+        fixedLongitudeDeg = v.fixedLongitudeDeg
+        sprites?.sweepSpeed = if (realSky && fixedLongitudeDeg == null) 2 * Math.PI / periodSeconds else 0.0
+        if (v.starDensity != starDensity) sprites?.invalidate()
+        starDensity = v.starDensity
+        sprites?.density = starDensity
+        starSize = v.starSize
+        auroraGain = v.auroraGain
+        airglowGain = v.airglowGain
         val scaleChanged = v.renderScale != renderScale
         renderScale = v.renderScale
         if (skipChanged && mapsLoaded) reloadMaps()
@@ -168,6 +180,7 @@ class EarthRenderer(
 
     /** How far the camera turned about the Earth's north axis (radians, Earth-fixed frame) during the last frame. */
     private fun cameraTurn(orbit: OrbitCamera, jd: Double): Double {
+        if (orbit.fixedLongitudeDeg != null) return 0.0 // a fixed view has no motion to smear
         val now = orbit.pose(jd).position
         val before = orbit.pose(jd - frameSeconds / 86400.0).position
         var turn = Math.atan2(now[2], now[0]) - Math.atan2(before[2], before[0])
@@ -189,9 +202,19 @@ class EarthRenderer(
         val tanX = tanY * viewWidth / viewHeight
         val previous = camera
         val next = OrbitCamera(OrbitCamera.distanceForFill(tanX, fill), previous?.latitudeDeg ?: latitudeDeg, periodSeconds, orbitDirection)
+        next.fixedLongitudeDeg = fixedLongitudeDeg
         // the new orbit starts at the angle the old one has now: a new period or direction does not throw the camera elsewhere
         if (previous != null) {
-            next.phase = if (lastDrawMs > 0) Astronomy.julianDate(lastDrawMs).let { previous.angle(it) - next.angle(it) } else previous.phase
+            val leaving = previous.fixedLongitudeDeg != null && fixedLongitudeDeg == null
+            next.phase = when {
+                leaving && lastDrawMs > 0 -> {
+                    // leaving the fixed view: the orbit goes on from the region the camera hovered over, not from the clock's phase
+                    val base = next.pose(Astronomy.julianDate(lastDrawMs)).position
+                    -Math.toRadians(previous.fixedLongitudeDeg ?: 0.0) - Math.atan2(base[2], base[0])
+                }
+                previous.fixedLongitudeDeg != null || lastDrawMs <= 0 -> previous.phase
+                else -> Astronomy.julianDate(lastDrawMs).let { previous.angle(it) - next.angle(it) }
+            }
         }
         camera = next
         tanHalfX = tanX.toFloat()
@@ -224,6 +247,8 @@ class EarthRenderer(
         GLES30.glUniform1f(loc("uCloudShift"), cloudShift(nowMs))
         GLES30.glUniform1f(loc("uStarGain"), starGain)
         GLES30.glUniform1f(loc("uFlashRate"), flashRate)
+        GLES30.glUniform1f(loc("uAuroraGain"), auroraGain)
+        GLES30.glUniform1f(loc("uAirglowGain"), airglowGain)
         GLES30.glUniform1i(loc("uQuality"), if (qualityOverride >= 0) qualityOverride else quality)
         GLES30.glUniform1f(loc("uSkyBlur"), cameraTurn(orbit, jd).toFloat())
         GLES30.glUniform1i(loc("uSkip"), skipMask or featureMask)
@@ -275,6 +300,7 @@ class EarthRenderer(
         GLES30.glUniform2f(loc("uViewport"), renderW.toFloat(), renderH.toFloat())
         GLES30.glUniform1f(loc("uPixelAngle"), 2f * tanHalfX / renderW)
         GLES30.glUniform1f(loc("uStarGain"), starGain)
+        GLES30.glUniform1f(loc("uStarSize"), starSize)
         GLES30.glUniform1f(loc("uRenderScale"), (renderW.toFloat() / viewWidth))
         GLES30.glUniform1f(loc("uTime"), ((nowMs / 1000.0) % 3600.0).toFloat())
         GLES30.glUniform1i(loc("uStarColors"), 7)

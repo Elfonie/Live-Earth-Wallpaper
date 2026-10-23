@@ -19,6 +19,9 @@ class OrbitCamera(
     private val periodSeconds: Double = PERIOD_SECONDS,
     private val direction: Int = 1, // -1 flies the orbit the other way round
 ) {
+    /** A longitude in degrees (east positive): the camera hovers over it instead of circling. */
+    var fixedLongitudeDeg: Double? = null
+
     /** Added to the angle on the orbit: set when a setting changes, so that the camera stays where it is. */
     var phase = 0.0
 
@@ -37,9 +40,16 @@ class OrbitCamera(
 
     /** The pose at [latitude] (the camera's own by default) on the same orbit angle: the sky is placed with the one at the default latitude. */
     fun pose(jd: Double, latitude: Double = latitudeDeg): Pose {
-        val e = Astronomy.earthRotation(jd)
-        val inertial = inertialPosition(jd, latitude)
-        val position = DoubleArray(3) { e[it * 3] * inertial[0] + e[it * 3 + 1] * inertial[1] + e[it * 3 + 2] * inertial[2] }
+        val fixed = fixedLongitudeDeg
+        val position = if (fixed != null) {
+            val lat = Math.toRadians(latitude)
+            val lon = Math.toRadians(fixed)
+            doubleArrayOf(distance * cos(lat) * cos(lon), distance * sin(lat), -distance * cos(lat) * sin(lon))
+        } else {
+            val e = Astronomy.earthRotation(jd)
+            val inertial = inertialPosition(jd, latitude)
+            DoubleArray(3) { e[it * 3] * inertial[0] + e[it * 3 + 1] * inertial[1] + e[it * 3 + 2] * inertial[2] }
+        }
         val toCamera = normalize(position)
         // The north pole direction, projected into the image plane
         val tilt = toCamera[1]

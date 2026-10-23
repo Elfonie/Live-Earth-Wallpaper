@@ -69,6 +69,14 @@
     const gg = gmst(jd) * rad;
     const c = Math.cos(gg), s = Math.sin(gg);
     const position = [c * inertial[0] + s * inertial[1], inertial[2], s * inertial[0] - c * inertial[1]];
+    return poseFromPosition(position);
+  }
+  // A camera fixed above an Earth longitude: daylight and clouds still follow the clock.
+  function fixedPose(dist, latitudeDeg, longitudeDeg) {
+    const lat = latitudeDeg * rad, lon = longitudeDeg * rad;
+    return poseFromPosition([dist * Math.cos(lat) * Math.cos(lon), dist * Math.sin(lat), -dist * Math.cos(lat) * Math.sin(lon)]);
+  }
+  function poseFromPosition(position) {
     const n = norm(position);
     const up = norm([-n[1] * n[0], 1 - n[1] * n[1], -n[1] * n[2]]);
     const forward = norm([-position[0], -position[1], -position[2]]);
@@ -123,6 +131,7 @@
       };
     },
     orbitPose,
+    fixedPose,
     orbitAngle,
     skyMatrix,
     skyMatrixInertial,

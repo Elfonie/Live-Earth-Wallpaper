@@ -19,7 +19,8 @@ It works offline and asks for no permissions. A PC version for Wallpaper Engine 
 - **Real astronomy**: Sun and Moon positions, moon phase, solar and lunar eclipses, about 870,000 catalog stars with
   their colours, the Milky Way, zodiacal light and gegenschein.
 - **Ground**: the Blue Marble of the current month (snow line and vegetation follow the calendar), city lights at night,
-  specular sea, relief on the clouds, a drifting 8k cloud layer, thin cirrus.
+  specular sea, clouds lit by their own relief (a shading normal from the cloud map, a short self-shadow towards the Sun and
+  wrapped light for side-lit cloud bodies), a drifting 8k cloud layer whose fine detail moves with it, thin cirrus.
 - **Upper atmosphere**: aurora, airglow, noctilucent clouds, subtle lightning in night storms. The aurora follows the
   geomagnetic ovals of both poles (the Feldstein-Starkov model at Kp 3: broad and bright at magnetic midnight, a thin band
   towards the Sun) with curtains, arcs, rays, a faint diffuse glow, a slow pulse and a brightening near midnight; seen along the
@@ -50,6 +51,8 @@ The start page shows whether your device can run Earth Live, whether it is curre
 error if the picture could not be drawn. **Settings** are also reachable from the wallpaper picker; every change applies at
 once to a running wallpaper.
 
+The settings are in four tabs, as in the Wallpaper Engine version: **View** (size, fixed view, orbit, latitude), **Space** (stars, Milky Way, Sun, Moon), **Earth** (clouds, city lights, aurora, airglow, lightning) and **Quality** (frame rate, resolution, effect and map quality). A setting that does not apply is hidden: for example the orbit settings while the view is fixed, the aurora strength while the aurora is off, and all cloud settings while the clouds are off. Hidden values are kept.
+
 ![The start page and the settings](docs/app_ui.jpg)
 
 | Setting | Range | Default | What it does |
@@ -59,8 +62,12 @@ once to a running wallpaper.
 | Direction of the Earth's turning | left to right / right to left | left to right | which way the surface moves (the real Earth turns left to right as seen here) |
 | Camera latitude | 60 S to 60 N | 21.4 N | where the camera circles; north shows the northern aurora, south the southern one |
 | Star brightness | 25-150 % | 100 % | brightness of the stars (they stay sharp points) |
+| Fixed view, longitude | off / on, 180 W to 180 E | off, 0 | the camera hovers over one place instead of circling the Earth (the orbit time and direction are not used then); the Sun, Moon, clouds and time of day keep moving; switching it off resumes the orbit from that place |
+| Star density | 0-100 % | 100 % | a stable subset of the catalog stars (the same stars drop out each time) |
+| Star size | 50-200 % | 100 % | above 100 % the bright core of a star grows and its soft edge stays; below 100 % the points get sharper and keep their light |
 | Star motion | Slow drift / Real sky | Slow drift | how the stars move: "Slow drift" hangs them on the picture and lets them creep along (3 hours a lap, whatever the orbit time); "Real sky" puts them in space like the Moon and the Sun, so the camera's orbit pans them as fast as the orbit time says |
-| Clouds, cirrus, city lights, aurora, airglow and night clouds, lightning, Sun, Moon | on / off | on | switch parts of the picture (Sun and Moon hide only the discs and the Sun's glow; the light they give stays) |
+| Milky Way and space glow, clouds, cirrus, city lights, aurora, airglow and night clouds, lightning, Sun, Moon | on / off | on | switch parts of the picture (Sun and Moon hide only the discs and the Sun's glow; the light they give stays; "Milky Way and space glow" hides the diffuse Milky Way and the zodiacal light, so the stars stand on black) |
+| Aurora strength, airglow strength | 0-200 % | 100 % | brightness of the aurora and of the airglow layer (the faint ambient night glow and the night clouds are not changed) |
 | Lightning frequency | 25-500 % | 100 % | how often the night storms flash (only while lightning is on) |
 | Cloud speed | 0-300 % | 100 % | 100 % = once around the Earth in an hour, 0 % = still |
 | Cloud direction | east / west | east | real clouds mostly drift east |
@@ -158,9 +165,19 @@ Or by hand: download `earth-live-pc.zip` from the [Releases](../../releases) pag
 `Wallpaper Engine\projects\myprojects\earth-live-pc` (so that `project.json` lies directly in that folder), then pick it under
 "Installed".
 
-Every setting of the Android app is a Wallpaper Engine property too: Earth size, orbit time and direction, camera latitude,
-star brightness and star motion, lightning frequency, cloud speed and direction, a switch for every effect (Sun and Moon included), frame rate (30 by default), render resolution, map quality, effect quality, sharp
-cloud edges and smoothing of the Sun and Moon. The picture adapts to the screen: 1080p to 4K, ultrawide, and screens that are
+Every setting of the Android app is a Wallpaper Engine property too, in four groups (properties that do not apply are hidden,
+for example the orbit time while the view is fixed):
+
+| Group | Properties |
+|---|---|
+| View and motion | Earth size, **fixed view** (no orbit: the camera hovers over one region) with its **longitude**, camera latitude, orbit time and direction |
+| Space | **star density** (a stable subset of the catalog: the same stars drop out each time), **star size** and brightness, sky motion (slow drift / real sky), **Milky Way and space glow**, Sun, Moon, smoothing of the Sun and Moon |
+| Earth and effects | clouds, cirrus, cloud speed and direction, city lights, aurora with its **strength** (0-200 %), airglow with its **strength**, lightning and its rate |
+| Performance and quality | frame rate (30 by default), render resolution, map quality, effect quality, sharp cloud edges |
+
+The star size slider enlarges the bright core of a star, not its soft edge, so bigger stars do not turn blurry; below 100 % the
+points get sharper and keep their light. Moving the star and effect sliders does not recompile the shader any more. The
+picture adapts to the screen: 1080p to 4K, ultrawide, and screens that are
 taller than wide.
 
 It also runs in any WebGL2 browser (`python tools/web_server.py`, then open http://127.0.0.1:8791). It has been tried on one
@@ -206,6 +223,11 @@ desktop preview (`tools/preview.py`) and the debug and profiling controls. The r
   the limb it is a thin line and can show a faint texture.
 - The aurora is drawn for a moderately active night (Kp 3) and its size does not change with the real geomagnetic activity.
 - "Star motion: Real sky" makes the stars sweep past as fast as the Moon; at orbit times under about 6 minutes they race.
+- Version 1.3 changed the cloud lighting (more texture samples per cloud pixel: four for the shading normal and up to three for
+  the self-shadow, fewer in Medium and none in Low). On the PC (Intel Arc B580, 2560 x 1440) the whole picture takes 3.7-4.0 ms, within +-0.1 ms
+  of the old cloud lighting. On the Pixel 10 Pro it costs more: with everything on, 1.3 measured about 35.6 ms per frame against about 31.0 ms
+  for 1.2 (two runs of 1.3 and two of 1.2, the same debug build with only the shader swapped, the phone warm), about 4.6 ms more, of which about
+  2.5 ms are the new cloud lighting. At 10 fps the GPU is busy about 35 % of the time. Effects quality Medium saves about 3.3 ms and Low about 9 ms.
 - The Moon texture's origin (public domain or not) and the Gaia and GEBCO terms limit commercial use: the app is free, without
   ads, price or donation links (see [ATTRIBUTION.md](ATTRIBUTION.md)).
 

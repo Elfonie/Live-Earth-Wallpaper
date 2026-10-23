@@ -48,6 +48,31 @@ class OrbitCameraTest {
         assertTrue("and the camera's own latitude is kept", high.pose(start).position[1] > there.position[1])
     }
 
+    private fun longitudeOf(p: DoubleArray) = Math.toDegrees(Math.atan2(-p[2], p[0]))
+
+    @Test
+    fun aFixedViewHoversOverItsLongitudeAndLatitude() {
+        val fixed = OrbitCamera(distance, 30.0)
+        fixed.fixedLongitudeDeg = 60.0
+        for (minute in listOf(0, 90, 1000)) {
+            val pose = fixed.pose(start + minute / 1440.0)
+            assertEquals(distance, length(pose.position), 1e-9)
+            assertEquals(60.0, longitudeOf(pose.position), 1e-6)
+            assertEquals(30.0, Math.toDegrees(asin(pose.position[1] / distance)), 1e-6)
+            assertEquals(-1.0, dot(pose.forward, pose.position) / distance, 1e-9) // looks at the centre
+        }
+    }
+
+    @Test
+    fun leavingAFixedViewResumesTheOrbitOverTheSameLongitude() {
+        // the renderer sets the phase this way when the fixed view is switched off (EarthRenderer.buildCamera)
+        val orbit = OrbitCamera(distance, 21.4)
+        val base = orbit.pose(start).position
+        orbit.phase = -Math.toRadians(-75.0) - Math.atan2(base[2], base[0])
+        assertEquals(-75.0, longitudeOf(orbit.pose(start).position), 1e-6)
+        assertTrue("and it moves on from there", Math.abs(longitudeOf(orbit.pose(start + 1 / 1440.0).position) + 75.0) > 5.0)
+    }
+
     @Test
     fun distanceStaysConstantOverTheWholeOrbit() {
         for (minute in 0 until 600 step 7) {

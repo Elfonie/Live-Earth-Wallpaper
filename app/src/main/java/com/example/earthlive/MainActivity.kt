@@ -24,6 +24,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // started afresh while the settings were left open a short time ago: go back to where the user was (back leads here)
+        if (savedInstanceState == null && Prefs.Ui.shouldResumeSettings(this)) startActivity(Intent(this, SettingsActivity::class.java))
         val (scroll, column) = Ui.page(this)
 
         val hero = ImageView(this).apply {

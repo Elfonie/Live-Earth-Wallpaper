@@ -36,6 +36,21 @@ uniform vec3 uEclipticPole;  // north pole of the ecliptic in the Earth-fixed fr
 uniform int uSkip;          // bits that switch parts of the picture off (0 = everything on), see SKIP_*: the user's settings, and profiling
 uniform float uSkyBlur;   // radians the camera turned about the north axis during one frame (0: no motion blur of the Sun and the Moon)
 uniform float uStarGain;   // the user's star brightness, 1 = as drawn by default
+#ifdef WEB_SETTINGS
+uniform float uStarSize;   // Gaussian width relative to STAR_SIGMA_BASE, in render pixels
+uniform float uStarCore;   // extra bright-core radius; increasing size does not widen the soft edge
+uniform float uStarPeakScale; // compensates sharper points; larger cores keep the same peak brightness
+uniform float uStarDensity; // stable fraction of catalog stars, 0..1
+#else
+const float uStarSize = 1.0, uStarPeakScale = 1.0, uStarDensity = 1.0;
+const float uStarCore = 0.0;
+#endif
+#if defined(WEB_SETTINGS) || defined(USER_GAINS)
+uniform float uAuroraGain;   // the user's aurora and airglow strength, 1 = as drawn by default
+uniform float uAirglowGain;
+#else
+const float uAuroraGain = 1.0, uAirglowGain = 1.0;
+#endif
 uniform float uFlashRate;  // the user's lightning frequency, 1 = as drawn by default
 uniform int uQuality;      // effects quality: 0 high (as designed), 1 medium, 2 low: fewer shells, taps and octaves, nothing is switched off
 uniform float uAuroraPhase; // 0..1 around every 2 minutes; the aurora only uses periodic functions of it, so it never jumps
@@ -53,7 +68,7 @@ uniform sampler2D uMilky;           // gamma 2.2 encoded diffuse Milky Way
 
 const float SUN_E = 3.2;
 const float ATMO_BOOST = 0.8; // the ground is shaded as albedo * E (no 1/pi): the same scale for the scattered light
-const vec3 MOON_COLOR = vec3(0.06, 0.085, 0.13) * 0.0537; // moonlight: 1 : 700 of the Sun (the real ratio is 1 : 400 000)
+const vec3 MOON_COLOR = vec3(0.075, 0.083, 0.098) * 0.0537; // restrained cool moonlight, similar luminance; deliberately brighter than the real Sun/Moon ratio
 const vec3 AIRGLOW = vec3(0.006, 0.008, 0.014) * 0.2; // the faint light of the night sky on the dark side
 const vec3 SKY_AMBIENT = vec3(0.5, 0.65, 1.0) * 0.07;
 
@@ -63,9 +78,6 @@ const vec3 SKY_AMBIENT = vec3(0.5, 0.65, 1.0) * 0.07;
 const float LIGHTS_COARSE_MIN = 0.0002;
 const float CLOUDS_COARSE_MIN = 0.012;
 const float DETAIL_MIN = 0.06;     // fine and coarse sample closer than this: nothing finer than a pixel to anti-alias
-const float RELIEF_PX = 2.5;      // how far toward the Sun the density is compared, in screen pixels
-const float RELIEF_GAIN = 4.0;
-const float RELIEF_STRENGTH = 0.9;
 
 // Aurora: an irregular oval around the geomagnetic poles (80.7 N, 72.7 W and its antipode). The emission is field-aligned
 // (it depends on the place, not on the height) and a vertical profile gives the violet lower fringe, the green body and
@@ -202,15 +214,25 @@ vec3 starfield(vec3 dir, float limb) {
     ivec2 cell = ivec2(min(int(raCells), 1439), clamp(int(decCells), 0, 719));
     ivec2 side = ivec2(fract(raCells) < 0.5 ? -1 : 1, fract(decCells) < 0.5 ? -1 : 1);
     vec2 inCell = vec2(fract(raCells), fract(decCells)); // the pixel's position inside its cell, in cell units
-    float reach = 3.0 * (STAR_SIGMA + 0.6) * uPixelAngle / CELL_RAD; // the largest footprint (3 sigma), in cells
+    float reach = 1.5 * STAR_SIGMA * (3.0 * uStarSize + uStarCore) * uPixelAngle / CELL_RAD;
     vec2 toBorder = min(inCell, 1.0 - inCell); // distance to the nearer border in each direction
     float cosDec = sqrt(max(1.0 - dir.z * dir.z, 0.0));
     bool cheapTest = cosDec > 0.2; // near the celestial poles the planar test is not conservative: use the exact one
     float flickerAmp = FLICKER_BASE + FLICKER_LIMB * limb;
     vec3 sum = vec3(0.0);
+#ifdef WEB_SETTINGS
+    // Normal points only need the nearest 2x2 cells. Larger user-selected points at low resolution can cross both borders.
+    int neighbours = reach <= 0.5 ? 4 : 25;
+    for (int n = 0; n < 25; n++) {
+        if (n >= neighbours) break;
+        ivec2 off = neighbours == 4 ? ivec2((n & 1) * side.x, (n >> 1) * side.y) : ivec2(n % 5 - 2, n / 5 - 2);
+        vec2 border = max(abs(vec2(off) + 0.5 - inCell) - 0.5, 0.0);
+        if (border.x > reach || border.y > reach) continue; // too far to matter
+#else
     for (int n = 0; n < 4; n++) {
         ivec2 off = ivec2((n & 1) * side.x, (n >> 1) * side.y);
-        if (((n & 1) != 0 && toBorder.x > reach) || ((n >> 1) != 0 && toBorder.y > reach)) continue; // too far to matter
+        if (((n & 1) != 0 && toBorder.x > reach) || ((n >> 1) != 0 && toBorder.y > reach)) continue;
+#endif
         ivec2 c = cell + off;
         if (c.y < 0 || c.y > 719) continue;
         c.x = (c.x + 1440) % 1440;
@@ -220,22 +242,27 @@ vec3 starfield(vec3 dir, float limb) {
             uvec2 rec = texelFetch(uSkyStars, ivec2(i & 2047, i >> 11), 0).rg;
             float mag = float(rec.y & 255u) / 16.0 - 2.0;
             if (mag > STAR_MAG_LIMIT) continue;
-            float sigma = starSigma(mag);
+            // Catalog seed only: reducing density always removes the same stars, without animation or flicker.
+            if (fract(float(rec.y >> 16) * 0.6180339) >= uStarDensity) continue;
+            float sigma = starSigma(mag) * uStarSize;
+            float core = starSigma(mag) * uStarCore;
+            float radius = core + 3.0 * sigma;
             vec2 frac = vec2(float(rec.x & 65535u), float(rec.x >> 16)) / 65535.0;
             if (cheapTest) { // planar distance in radians, with 30 % slack for the cosine of the declination varying
                 vec2 d = (vec2(off) + frac - inCell) * vec2(cosDec, 1.0);
-                if (dot(d, d) * CELL_RAD * CELL_RAD > 1.7 * 9.0 * sigma * sigma * uPixelAngle * uPixelAngle) continue;
+                if (dot(d, d) * CELL_RAD * CELL_RAD > 1.7 * radius * radius * uPixelAngle * uPixelAngle) continue;
             }
             float ra = (float(c.x) + frac.x) * CELL_RAD;
             float dec = (float(c.y) + frac.y) * CELL_RAD - 0.5 * PI;
             vec3 star = vec3(cos(dec) * cos(ra), cos(dec) * sin(ra), sin(dec));
             // |cross| stays accurate for tiny separations, unlike acos(dot)
             float px = length(cross(star, dir)) / uPixelAngle;
-            if (px > 3.0 * sigma) continue;
+            if (px > radius) continue;
             vec3 tint = texelFetch(uStarColors, ivec2(int((rec.y >> 8) & 255u), 0), 0).rgb;
-            float peak = starPeak(mag);
+            float peak = starPeak(mag) * uStarPeakScale;
             float flicker = 1.0 + flickerAmp * twinkle(float(rec.y >> 16));
-            sum += tint * peak * flicker * exp(-0.5 * px * px / (sigma * sigma));
+            float edge = max(px - core, 0.0);
+            sum += tint * peak * flicker * exp(-0.5 * edge * edge / (sigma * sigma));
         }
     }
     return sum;
@@ -418,8 +445,9 @@ vec3 sunBody(vec3 rd) {
     float ang = length(cross(rd, gSun));
     float mu = sqrt(max(1.0 - (ang / SUN_RADIUS) * (ang / SUN_RADIUS), 0.0));
     float disc = smoothstep(SUN_RADIUS + uPixelAngle, SUN_RADIUS - uPixelAngle, ang);
-    float glow = 0.9 * exp(-ang / 0.012) + 0.06 * exp(-ang / 0.04);
-    return vec3(1.0, 0.93, 0.80) * (60.0 * (0.55 + 0.45 * mu) * disc) + vec3(1.0, 0.85, 0.6) * (glow * SUN_E);
+    // Compact, gently warm camera glare; atmospheric transmission supplies stronger sunset colour.
+    float glow = 0.65 * exp(-ang / 0.009) + 0.018 * exp(-ang / 0.025);
+    return vec3(1.0, 0.93, 0.80) * (60.0 * (0.55 + 0.45 * mu) * disc) + vec3(1.0, 0.94, 0.80) * (glow * SUN_E);
 }
 
 float hash13(vec3 p) {
@@ -527,7 +555,7 @@ vec3 upperAtmosphere(vec3 ro, vec3 rd, float tca, float d2, float fw, vec3 airT)
     vec3 sum = vec3(0.0);
 
     float night = 1.0 - smoothstep(-0.25, 0.12, sunDot);
-    if (night > 0.0) {
+    if (night > 0.0 && uAirglowGain > 0.0) {
         // Three taps across the pixel (along the closest-approach distance) average the thin bright line at the limb and the
         // step at the planet's edge: without them the glow shows pixel stairs. On the disc: straight through the layers (the
         // sum of the profile); at the limb the line of sight runs along the layers, shell by shell.
@@ -557,7 +585,7 @@ vec3 upperAtmosphere(vec3 ro, vec3 rd, float tca, float d2, float fw, vec3 airT)
         // finer streaks
         float patchy = perlin(vec2(pn.x * 6.0 + pn.z * 4.0, pn.y * 8.0 + 2.0 * pn.z)) + 0.6 * perlin(vec2(pn.x * 23.0 + pn.z * 17.0, pn.y * 31.0 + 5.0));
         float uneven = 0.4 + 0.6 * smoothstep(-0.5, 0.9, patchy);
-        sum += glow * (AIRGLOW_GAIN * night * uneven);
+        sum += glow * (AIRGLOW_GAIN * night * uneven * uAirglowGain);
     }
 
     float lat = abs(pn.y);
@@ -683,7 +711,9 @@ void main() {
         gE = seamGrad(uvE);
         gC = seamGrad(uvC);
         gS = seamGrad(uvS);
-        uvH = sphereUV(nH) + vec2(0.31 - 1.7 * uCloudShift, 0.0); // its own pattern and a faster drift
+        // Upper wisps follow the same weather systems with a small shear; both clock wraps remain seamless.
+        float shear = 0.0035 + 0.0015 * sin(2.0 * PI * uCloudShift);
+        uvH = sphereUV(nH) + vec2(shear - uCloudShift, 0.0);
         gH = seamGrad(uvH);
     }
     vec3 dirCel = vec3(0.0);
@@ -707,6 +737,13 @@ void main() {
     if ((uSkip & (SKIP_ATMO_BACK | SKIP_ATMO_FRONT)) == 0) {
         vec3 scattered;
         atmosphereAlongRay(ro, rd, tca, d2, L, uQuality == 2, scattered, airT); // low: one fetch per table instead of two
+        // Display colour adjustment: soften saturated red/violet only near the twilight limb.
+        // Keep the LUT transmission and the scattered-light luminance unchanged.
+        vec3 tangentPoint = ro + rd * tca;
+        float tangentSun = dot(tangentPoint / max(length(tangentPoint), 1e-5), L);
+        float twilightLimb = smoothstep(0.85, 1.0, sqrt(max(d2, 0.0)))
+                           * smoothstep(-0.20, -0.06, tangentSun) * (1.0 - smoothstep(0.02, 0.22, tangentSun));
+        scattered = mix(scattered, vec3(dot(scattered, vec3(0.2126, 0.7152, 0.0722))), 0.28 * twilightLimb);
         airLight = SUN_E * ATMO_BOOST * scattered;
         // the haze of the Moon's light: faint (1 : 700 of the Sun), so medium and low leave out the thin phases and take it from one fetch per table
         if (uMoonPhase > (uQuality == 0 ? 0.03 : (uQuality == 1 ? 0.1 : 0.2))) airLight += MOON_COLOR * uMoonPhase * ATMO_BOOST * 0.5 * scatteredFrom(ro, rd, tca, d2, M, uQuality > 0);
@@ -795,14 +832,19 @@ void main() {
         vec3 tn = topo.rgb * 2.0 - 1.0;
         vec3 Nb = normalize(east * tn.x + north * tn.y + N * tn.z);
 
-        // The IR-based map reads high-latitude cold ground as cloud, so only the brightest values count as dense cloud
+        // Detail moves with the cloud map rather than remaining painted onto the Earth beneath it.
+        float cloudAngle = 2.0 * PI * uCloudShift;
+        vec3 cloudMaterial = vec3(cos(cloudAngle) * nC.x - sin(cloudAngle) * nC.z, nC.y,
+                                  sin(cloudAngle) * nC.x + cos(cloudAngle) * nC.z);
         float cloudDetail = 0.0;
         if (alphaAvg > 0.0 && (uSkip & SKIP_CLOUDS) == 0) {
-            cloudDetail = 0.5 * (perlin(nC.xy * 160.0) + perlin(nC.zy * 160.0 + 17.0));
-            if (uQuality < 2) cloudDetail += 0.25 * (perlin(nC.xy * 370.0 + 5.0) + perlin(nC.zy * 370.0 + 29.0)); // the fine octave: not in low
+            cloudDetail = 0.5 * (perlin(cloudMaterial.xy * 160.0) + perlin(cloudMaterial.zy * 160.0 + 17.0));
+            if (uQuality < 2) cloudDetail += 0.25 * (perlin(cloudMaterial.xy * 370.0 + 5.0) + perlin(cloudMaterial.zy * 370.0 + 29.0));
             alphaAvg = clamp(alphaAvg + cloudDetail * CLOUD_DETAIL * 4.0 * alphaAvg * (1.0 - alphaAvg), 0.0, 1.0);
         }
-        alphaC = 0.92 * alphaAvg;
+        // A shallow view crosses more of the deck. Dense cloud hides the ground; thin edges stay translucent.
+        float cloudView = max(dot(nC, normalize(ro - nC * R_CLOUD)), 0.45);
+        alphaC = 1.0 - pow(max(1.0 - 0.94 * alphaAvg, 0.005), 1.0 / cloudView);
 
         // ---- ground ----
         float horizon = smoothstep(-0.015, 0.06, ndl);
@@ -820,28 +862,49 @@ void main() {
                 + vec3(0.5, 0.6, 0.75) * uMoonPhase * (0.02 * ggxSpec(N, M, V) * topo.a * horizonM) // a faint silvery glint of the Moon on the sea
                 + AIRGLOW;
 
-        vec3 city = lightLuma * vec3(1.0, 0.70, 0.36) * 5.0 * nightness + cityGlow * vec3(1.0, 0.58, 0.26) * (CITY_GLOW_GAIN * nightness);
+        vec3 city = lightLuma * vec3(1.0, 0.74, 0.43) * 5.0 * nightness + cityGlow * vec3(1.0, 0.63, 0.33) * (CITY_GLOW_GAIN * nightness);
         ground += city;
 
         // ---- clouds: lit from the shell, so they stay lit past the ground terminator (twilight) ----
         float ndlC = dot(nC, L);
-        float shellHorizon = 0.0706; // cos of the angle at which the earth shadows the 1.0025 shell
-        float visC = smoothstep(0.0, 0.12, ndlC + shellHorizon);
-        float diffC = max(ndlC, 0.0) + 0.10 * visC;
-        float cloudAlbedo = mix(0.5, 0.9, smoothstep(0.35, 0.85, cloudCover)) * (1.0 + 0.07 * cloudDetail);
-        // relief: compare the density here with the density a few pixels toward the Sun
-        vec2 sunScreen = vec2(dot(L, uCamRight), dot(L, uCamUp));
-        float sunSide = length(sunScreen);
-        vec2 sunDir2 = sunScreen / max(sunSide, 1e-3);
-        vec2 reliefOff = RELIEF_PX * (sunDir2.x * gC.dx + sunDir2.y * gC.dy);
-        float relief = 0.0;
+        float cloudAlbedo = mix(0.48, 0.86, smoothstep(0.35, 0.85, cloudCover)) * (1.0 + 0.12 * cloudDetail);
+        // Shading normals from an inferred cloud-top height field. Coverage and layer coordinates are unchanged.
+        // The IR map is a structure proxy, not measured geometric height; a bounded slope avoids rocky-looking clouds.
+        vec3 cloudNormal = nC;
+        vec3 cloudEast = normalize(vec3(nC.z, 0.0, -nC.x) + vec3(1e-5, 0.0, 0.0));
+        vec3 cloudNorth = cross(nC, cloudEast);
+        vec2 driftUV = vec2(uCloudShift, 0.0);
+        float cloudSelfShadow = 1.0;
         if ((uSkip & (SKIP_RELIEF | SKIP_CLOUDS)) == 0 && alphaC > 0.01) {
-            float hHere = textureGrad(uClouds, uvC, gC.dx * 2.0, gC.dy * 2.0).r;
-            float hSun = textureGrad(uClouds, uvC + reliefOff, gC.dx * 2.0, gC.dy * 2.0).r;
-            relief = clamp((hHere - hSun) * RELIEF_GAIN, -1.0, 1.0) * smoothstep(0.05, 0.4, sunSide) * alphaC;
+            const float stepAngle = 0.0025;
+            float hEast = textureGrad(uClouds, sphereUV(normalize(nC + cloudEast * stepAngle)) - driftUV, gC.dx * 1.5, gC.dy * 1.5).r;
+            float hWest = textureGrad(uClouds, sphereUV(normalize(nC - cloudEast * stepAngle)) - driftUV, gC.dx * 1.5, gC.dy * 1.5).r;
+            float hNorth = textureGrad(uClouds, sphereUV(normalize(nC + cloudNorth * stepAngle)) - driftUV, gC.dx * 1.5, gC.dy * 1.5).r;
+            float hSouth = textureGrad(uClouds, sphereUV(normalize(nC - cloudNorth * stepAngle)) - driftUV, gC.dx * 1.5, gC.dy * 1.5).r;
+            vec2 slope = clamp(vec2(hEast - hWest, hNorth - hSouth) * 0.32, vec2(-0.28), vec2(0.28));
+            cloudNormal = normalize(nC - cloudEast * slope.x - cloudNorth * slope.y);
+            if (uQuality < 2) {
+                vec3 towardSun = normalize(L - nC * ndlC + vec3(1e-6));
+                float hHere = textureGrad(uClouds, uvC, gC.dx * 2.0, gC.dy * 2.0).r;
+                float occlusion = 0.0;
+                int steps = uQuality == 0 ? 3 : 2;
+                for (int k = 0; k < 3; k++) {
+                    if (k >= steps) break;
+                    float distance = 0.004 * exp2(float(k));
+                    vec2 sampleUV = sphereUV(normalize(nC + towardSun * distance)) - driftUV;
+                    float ahead = textureGrad(uClouds, sampleUV, gC.dx * 3.0, gC.dy * 3.0).r;
+                    float clearance = float(k + 1) * (0.025 + 0.10 * max(ndlC, 0.0));
+                    occlusion += max(ahead - hHere - clearance, 0.0) / float(k + 1);
+                }
+                cloudSelfShadow = exp(-2.8 * occlusion * (1.0 - 0.65 * smoothstep(0.0, 0.8, ndlC)));
+            }
         }
-        vec3 cloudRad = cloudAlbedo * (SUN_E * sunTintAt(R_CLOUD, ndlC) * diffC * visC * (1.0 + RELIEF_STRENGTH * relief) * (1.0 - (uSolarEclipse > 0.5 && ndlC > -0.1 ? sunCoveredByMoon(nC * R_CLOUD) : 0.0))
-                      + moonE * (2.0 * max(dot(nC, M), 0.0))
+        // Wrapped diffuse is a cheap cloud-scattering approximation, keeping side-lit cloud bodies visible.
+        // sunTintAt uses the geometric shell normal: real atmospheric reddening and Earth shadow, once only.
+        float cloudDiffuse = 1.1 * max((dot(cloudNormal, L) + 0.18) / 1.18, 0.0);
+        vec3 cloudRad = cloudAlbedo * (SUN_E * sunTintAt(R_CLOUD, ndlC) * cloudDiffuse * cloudSelfShadow * (1.0 - (uSolarEclipse > 0.5 && ndlC > -0.1 ? sunCoveredByMoon(nC * R_CLOUD) : 0.0))
+                      + SKY_AMBIENT * ((0.50 + 0.25 * (1.0 - cloudSelfShadow)) * smoothstep(-0.08, 0.25, ndlC))
+                      + moonE * (2.0 * max(dot(cloudNormal, M), 0.0))
                       + AIRGLOW * 1.5
                       + city * 0.3);
         // lightning lights up the cloud deck from inside: only at night and only in big decks of the tropics
@@ -859,23 +922,35 @@ void main() {
 
         // ---- cirrus: thin streaks high above the clouds, with a parallax of their own ----
         if ((uSkip & (SKIP_CLOUDS | SKIP_CIRRUS)) == 0 && dist < R_CIRRUS) {
-            float high = textureGrad(uClouds, uvH, gH.dx * 3.0, gH.dy * 3.0).r;
+            float high = clamp(textureGrad(uClouds, uvH, gH.dx * 3.0, gH.dy * 3.0).r - landBias, 0.0, 1.0);
             float thin = smoothstep(0.50, 0.92, high); // only the densest parts of the map: sparse cirrus, not a second cloud layer
             if (thin > 0.0) {
-                // streaks along the lines of latitude: slow variation along them, fast across them
-                float wisps = 0.65 * valueNoise3(vec3(nH.x * 14.0, nH.z * 14.0, nH.y * 60.0));
-                wisps = uQuality == 2 ? wisps / 0.65 * 0.9 : wisps + 0.35 * valueNoise3(vec3(nH.x * 30.0, nH.z * 30.0, nH.y * 150.0) + 7.0); // low: the coarse octave only
+                // Streaks move in the upper layer's material coordinates, rather than sliding through a fixed noise field.
+                float shear = 0.0035 + 0.0015 * sin(2.0 * PI * uCloudShift);
+                float highAngle = 2.0 * PI * (uCloudShift - shear);
+                vec3 highMaterial = vec3(cos(highAngle) * nH.x - sin(highAngle) * nH.z, nH.y,
+                                         sin(highAngle) * nH.x + cos(highAngle) * nH.z);
+                float wisps = 0.65 * valueNoise3(vec3(highMaterial.x * 14.0, highMaterial.z * 14.0, highMaterial.y * 60.0));
+                wisps = uQuality == 2 ? wisps / 0.65 * 0.9 : wisps + 0.35 * valueNoise3(vec3(highMaterial.x * 30.0, highMaterial.z * 30.0, highMaterial.y * 150.0) + 7.0);
                 alphaH = 0.24 * thin * smoothstep(-0.2, 0.45, wisps);
+                float cirrusView = max(dot(nH, normalize(ro - nH * R_CIRRUS)), 0.55);
+                alphaH = 1.0 - pow(1.0 - alphaH, 1.0 / cirrusView);
                 float ndlH = dot(nH, L);
-                float visH = smoothstep(0.0, 0.12, ndlH + sqrt(1.0 - 1.0 / (R_CIRRUS * R_CIRRUS)));
-                vec3 cirrusRad = 0.95 * (SUN_E * sunTintAt(R_CIRRUS, ndlH) * (max(ndlH, 0.0) + 0.10 * visH) * visH
+                float diffuseH = 1.1 * max((ndlH + 0.12) / 1.12, 0.0);
+                vec3 cirrusRad = 0.95 * (SUN_E * sunTintAt(R_CIRRUS, ndlH) * diffuseH
+                               + SKY_AMBIENT * (0.25 * smoothstep(-0.08, 0.25, ndlH))
                                + moonE * (1.5 * max(dot(nH, M), 0.0)) + AIRGLOW * 1.5);
+                float cirrusTwilight = smoothstep(-0.12, -0.04, ndlH) * (1.0 - smoothstep(0.0, 0.20, ndlH));
+                cirrusRad = mix(cirrusRad, vec3(dot(cirrusRad, LUMA)), 0.18 * cirrusTwilight);
                 cirrusTotal = cirrusRad * airT + airLight;
             }
         }
 
         // ---- the air in front of the ground ----
         groundTotal = ground * airT + airLight;
+        // Preserve warm sunset lighting, with a gentler chroma at grazing solar angles.
+        float cloudTwilight = smoothstep(-0.12, -0.04, ndlC) * (1.0 - smoothstep(0.0, 0.20, ndlC));
+        cloudRad = mix(cloudRad, vec3(dot(cloudRad, LUMA)), 0.18 * cloudTwilight);
         cloudTotal = cloudRad * airT + airLight;
     }
 
@@ -886,15 +961,15 @@ void main() {
         if ((uSkip & SKIP_MILKY) == 0) {
             milky = pow(fetch(uMilky, uvSky, gSky).rgb, vec3(2.2)) * MW_SCALE;
             milky = mix(vec3(dot(milky, vec3(0.2126, 0.7152, 0.0722))), milky, MW_SATURATION);
+            milky += zodiacal(rd); // the diffuse sky switch covers both the Milky Way and interplanetary dust glow
         }
-        milky += zodiacal(rd);
         float limb = 1.0 - pow(airT.g, 1.5); // how much air the starlight crosses
         gSun = uSunDir;
         gMoonPos = uMoonPos;
 #ifdef STAR_SPRITES
         vec3 stars = vec3(0.0); // drawn as sprites into the same buffer after this pass
 #else
-        vec3 stars = (uSkip & SKIP_STARS) == 0 ? starfield(dirCel, limb) * uStarGain : vec3(0.0);
+        vec3 stars = (uSkip & SKIP_STARS) == 0 && uStarDensity > 0.0 ? starfield(dirCel, limb) * uStarGain : vec3(0.0);
 #endif
         // faint stars close to the limb and behind the glow band are weaker, only well above it they shine fully
         vec3 backdrop = (milky + stars) * limbFade(dist);
@@ -929,7 +1004,7 @@ void main() {
     col = mix(col, cloudTotal, alphaC * covC);
     col = mix(col, cirrusTotal, alphaH * covH);
 
-    if ((uSkip & SKIP_AURORA) == 0) col += aurora(ro, rd, tca, d2, airT, fw);
+    if ((uSkip & SKIP_AURORA) == 0 && uAuroraGain > 0.0) col += aurora(ro, rd, tca, d2, airT, fw) * uAuroraGain;
     if ((uSkip & SKIP_UPPER_AIR) == 0) col += upperAtmosphere(ro, rd, tca, d2, fw, airT); // the emission shells in front of the planet's night side and along the limb
 
 #ifdef HDR_OUT

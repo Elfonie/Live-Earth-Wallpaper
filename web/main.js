@@ -3,14 +3,16 @@
 (function () {
   'use strict';
   // The same settings as the Android app (see project.json for the Wallpaper Engine properties that fill them).
-  // fill: the Earth's diameter as a fraction of the screen height; starSigma and starLimit are compiled into the shader.
+  // fill: the Earth's diameter as a fraction of the screen height; starSigma is the reference width at 1440 screen pixels.
   const settings = {
     fps: 30, scale: 1.0, fill: 0.9, starSigma: 0.7, starLimit: 10.0,
-    periodMinutes: 24, direction: 1, latitude: 21.4, physicalSky: false, starGain: 1, flashRate: 1, tier: 0, quality: 0, cloudSpeed: 100, cloudDirection: 1,
+    periodMinutes: 24, direction: 1, latitude: 21.4, fixedView: false, longitude: 0,
+    physicalSky: false, starGain: 1, starDensity: 1, starSize: 1, auroraGain: 1, airglowGain: 1,
+    flashRate: 1, tier: 0, quality: 0, cloudSpeed: 100, cloudDirection: 1,
     off: {}, // effect name -> true while the effect is switched off
   };
   // SKIP_* bits of earth.frag for the effects that can be switched off
-  const SKIP_BITS = { aurora: 16, lightning: 2048, airglow: 1024, cirrus: 4096, clouds: 256, citylights: 512, sharpclouds: 64, sunmoonblur: 8192, sun: 32, moon: 16384 };
+  const SKIP_BITS = { skyglow: 2, aurora: 16, lightning: 2048, airglow: 1024, cirrus: 4096, clouds: 256, citylights: 512, sharpclouds: 64, sunmoonblur: 8192, sun: 32, moon: 16384 };
   const skipMask = () => Object.keys(SKIP_BITS).reduce((m, k) => (settings.off[k] ? m | SKIP_BITS[k] : m), 0);
   // The camera is as far away as in the phone app (Earth fills 92 % of a 1280x2856 screen with a 30 degree vertical field),
   // so perspective, atmosphere, star density and sky detail match; only the field of view follows the screen's shape.
@@ -247,9 +249,33 @@
   // The cloud layer's drift against the ground in turns (a lap takes an hour at 100 %; negative: westward)
   const cloudShift = (sec) => (((cloudTurns(sec) + cloudOffset) % 1) + 1) % 1;
 
+  const cameraPose = (jd, latitude = latNow) => settings.fixedView
+    ? Astro.fixedPose(dist, latitude, settings.longitude)
+    : Astro.orbitPose(jd, dist, latitude, periodS(), settings.direction, orbitPhase);
+
+  function setFixedView(enabled) {
+    if (settings.fixedView && !enabled && lastMs !== null) {
+      // Resume the orbit from the selected region, rather than jumping to the clock's original orbit phase.
+      const base = Astro.orbitPose(Astro.julianDate(lastMs), dist, latNow, periodS(), settings.direction).position;
+      orbitPhase = -settings.longitude * Math.PI / 180 - Math.atan2(base[2], base[0]);
+    }
+    settings.fixedView = enabled;
+  }
+
+  function starShape() {
+    // Set apparent size in screen pixels first, then convert to buffer pixels. Only the sampling floor depends on render scale.
+    const base = Math.max(settings.starSigma * screenH / 1440, 0.6) * height / screenH;
+    const sigma = Math.max(base * Math.min(settings.starSize, 1), 0.35);
+    // Above 100%, enlarge the bright core while keeping the edge softness and peak brightness fixed.
+    // Below 100%, sharpen the point and retain its light rather than making faint stars disappear.
+    const core = 1.2 * base * Math.max(settings.starSize - 1, 0);
+    return { sigma, core, peakScale: Math.pow(height / 1440 / sigma, 2) };
+  }
+
   // How far the camera turned about the north axis during one frame: the Sun and the Moon are smeared over it, so they glide
   // instead of jumping at low frame rates (earth.frag, uSkyBlur)
   function cameraTurn(jd, d, period) {
+    if (settings.fixedView) return 0;
     const frame = 1 / settings.fps;
     const a = Astro.orbitPose(jd, d, latNow, period, settings.direction, orbitPhase).position;
     const b = Astro.orbitPose(jd - frame / 86400, d, latNow, period, settings.direction, orbitPhase).position;
@@ -263,11 +289,10 @@
     const month = Astro.month(nowMs);
     if (month !== dayMonth && !draw.loading) { draw.loading = true; loadMonth(month).finally(() => { draw.loading = false; }); }
     const s = Astro.scene(nowMs);
-    const period = periodS();
     const dtSec = lastMs === null ? 0 : Math.min(Math.abs(nowMs - lastMs) / 1000, 1);
     latNow = lastMs === null || fixedMs ? settings.latitude : latNow + (settings.latitude - latNow) * (1 - Math.exp(-dtSec / 0.12));
     lastMs = nowMs;
-    const pose = Astro.orbitPose(s.jd, dist, latNow, period, settings.direction, orbitPhase);
+    const pose = cameraPose(s.jd);
     const sec = nowMs / 1000;
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, hdrFbo);
@@ -280,13 +305,20 @@
     // physicalSky: the stars stand in space like the Moon and move with the camera's orbit; else they are fixed to the picture and
     // drift slowly (placed as seen from the default latitude, so that a new latitude still moves them with the Moon)
     gl.uniformMatrix3fv(loc(progScene, 'uSkyRot'), false, settings.physicalSky ? Astro.skyMatrixInertial(s.jd)
-      : Astro.skyMatrix(s.jd, Astro.orbitPose(s.jd, dist, Astro.LATITUDE_DEG, period, settings.direction, orbitPhase)));
+      : Astro.skyMatrix(s.jd, cameraPose(s.jd, Astro.LATITUDE_DEG)));
     gl.uniform1f(loc(progScene, 'uCloudShift'), cloudShift(sec));
     gl.uniform1i(loc(progScene, 'uSkip'), skipMask());
     gl.uniform1f(loc(progScene, 'uStarGain'), settings.starGain);
+    const shape = starShape();
+    gl.uniform1f(loc(progScene, 'uStarSize'), shape.sigma);
+    gl.uniform1f(loc(progScene, 'uStarCore'), shape.core);
+    gl.uniform1f(loc(progScene, 'uStarPeakScale'), shape.peakScale);
+    gl.uniform1f(loc(progScene, 'uStarDensity'), settings.starDensity);
+    gl.uniform1f(loc(progScene, 'uAuroraGain'), settings.auroraGain);
+    gl.uniform1f(loc(progScene, 'uAirglowGain'), settings.airglowGain);
     gl.uniform1f(loc(progScene, 'uFlashRate'), settings.flashRate);
     gl.uniform1i(loc(progScene, 'uQuality'), settings.quality);
-    gl.uniform1f(loc(progScene, 'uSkyBlur'), cameraTurn(s.jd, dist, period));
+    gl.uniform1f(loc(progScene, 'uSkyBlur'), cameraTurn(s.jd, dist, periodS()));
     gl.uniform1f(loc(progScene, 'uAuroraPhase'), (sec % 120) / 120);
     gl.uniform1f(loc(progScene, 'uTime'), sec % 3600);
     gl.uniform1f(loc(progScene, 'uPixelAngle'), 2 * tanX / width);
@@ -305,15 +337,10 @@
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
-  let sources, builtK = 0;
-  // Stars: a monitor pixel is several times bigger than the phone's, so the same width in pixels looks blurry and the
-  // faint stars crowd the sky; sharper points and a magnitude limit bring the phone's look. The picture covers the same
-  // field of view at any resolution, so a star keeps its angular size (starSigma is for 1440 px of height of the buffer) and
-  // brightness; points narrower than 0.6 px would flicker, those keep the width and give up peak brightness to keep their light.
+  let sources;
+  // Width, brightness and density are uniforms: slider changes and render scale need no shader recompile.
   function sceneProgram() {
-    const k = builtK = height / 1440;
-    const sigma = Math.max(settings.starSigma * k, 0.6);
-    const defines = '#define HDR_OUT\n#define STAR_SIGMA_BASE ' + sigma.toFixed(3) + '\n#define STAR_FLUX_SIGMA ' + (sigma / k).toFixed(3) +
+    const defines = '#define HDR_OUT\n#define WEB_SETTINGS\n#define STAR_SIGMA_BASE 1.0\n#define STAR_FLUX_SIGMA 1.0' +
       '\n#define STAR_MAG_LIMIT ' + settings.starLimit.toFixed(1) + '\n';
     return program(sources.vs, sources.fs.replace(/#version 300 es\r?\n/, '#version 300 es\n' + defines), 'earth.frag');
   }
@@ -322,20 +349,6 @@
     const samplers = { uDay: 0, uNight: 1, uTopo: 2, uClouds: 3, uSkyCells: 4, uSkyStars: 5, uMilky: 6, uStarColors: 7, uMoon: 8, uTransmittance: 10, uScatR: 11, uScatM: 12, uScatMS: 13 };
     for (const n in samplers) gl.uniform1i(loc(progScene, n), samplers[n]);
     gl.uniform1f(loc(progScene, 'uDither'), 1 / 255);
-  }
-  let rebuilding = false;
-  async function rebuildScene() { // the star width is compiled in: a new render scale needs it again
-    if (rebuilding || !progScene) return;
-    rebuilding = true;
-    try {
-      // Wallpaper Engine sends every step of the slider; a change that arrives during a compile is picked up by this loop
-      while (Math.abs(height / 1440 / builtK - 1) >= 0.05) {
-        const next = await ready(sceneProgram());
-        gl.deleteProgram(progScene);
-        progScene = next;
-        sceneUniforms();
-      }
-    } finally { rebuilding = false; }
   }
 
   async function start() {
@@ -421,17 +434,25 @@
 
   // Wallpaper Engine user properties (project.json). WE sends all of them at load and then the changed ones.
   const num = (v) => (typeof v === 'number' ? v : parseFloat(v));
+  const bounded = (v, lo, hi, fallback) => { const n = num(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : fallback; };
+  const enabled = (v) => v === true || v === 'true' || v === 1;
   const handlers = {
     fps: (v) => { settings.fps = num(v); },
-    renderscale: (v) => { settings.scale = num(v); resize(); rebuildScene(); },
+    renderscale: (v) => { settings.scale = bounded(v, 0.5, 2, 1); resize(); },
     effectquality: (v) => { settings.quality = { '1': 1, '2': 2 }[String(v)] ?? 0; },
     texturequality: (v) => { settings.tier = { '1': 1, '2': 2 }[String(v)] ?? 0; ensureGround(); },
     earthsize: (v) => { settings.fill = num(v) / 100; width = 0; resize(); }, // width = 0 forces the geometry to be redone
     orbitminutes: (v) => keepPlace(() => { settings.periodMinutes = num(v); }),
     orbitdirection: (v) => keepPlace(() => { settings.direction = String(v) === '1' ? -1 : 1; }),
     latitude: (v) => { settings.latitude = num(v); },
+    fixedview: (v) => setFixedView(enabled(v)),
+    longitude: (v) => { settings.longitude = bounded(v, -180, 180, 0); },
     skymotion: (v) => { settings.physicalSky = String(v) === '1'; },
     starbrightness: (v) => { settings.starGain = num(v) / 100; },
+    stardensity: (v) => { settings.starDensity = bounded(v, 0, 100, 100) / 100; },
+    starsize: (v) => { settings.starSize = bounded(v, 50, 200, 100) / 100; },
+    aurorastrength: (v) => { settings.auroraGain = bounded(v, 0, 200, 100) / 100; },
+    airglowstrength: (v) => { settings.airglowGain = bounded(v, 0, 200, 100) / 100; },
     lightningrate: (v) => { settings.flashRate = num(v) / 100; },
     cloudspeed: (v) => keepPlace(() => { settings.cloudSpeed = num(v); }),
     clouddirection: (v) => keepPlace(() => { settings.cloudDirection = String(v) === '1' ? -1 : 1; }),

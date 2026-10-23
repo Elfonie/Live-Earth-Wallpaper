@@ -19,6 +19,7 @@ class StarSprites(private val table: SkyData.Table) {
     private var builtAtMs = Long.MIN_VALUE
     var rebuilt = false // set by update() when it rebuilt the list; the caller may log it and clear it
     @Volatile var magLimit = 99f // fainter stars are left out (the user's effects quality)
+    @Volatile var density = 1f // the stable share of the catalog that is drawn (by the star's own seed: the same stars drop out every time)
     @Volatile var sweepSpeed = 0.0 // radians per second the view turns against the sky (the real sky follows the orbit): a faster refresh and a wider margin
 
     /** Number of stars in the current list, and how long the last rebuild took (for the debug log). */
@@ -123,6 +124,7 @@ class StarSprites(private val table: SkyData.Table) {
         var n = 0
         val bounds = cellBounds(sky, right, up, forward, tanHalfX, tanHalfY, margin)
         val limit = magLimit
+        val keep = density
         for (cy in bounds.rowFrom..bounds.rowTo) {
             val cd = cosDec[cy]
             val sd = sinDec[cy]
@@ -140,7 +142,9 @@ class StarSprites(private val table: SkyData.Table) {
                 if (Math.abs(x) > 1.0 + margin || Math.abs(y) > 1.0 + margin) continue
                 val first = cells.get(cell * 2)
                 for (k in 0 until starCount) {
-                    if ((table.stars.getInt((first + k) * 8 + 4) and 255) / 16f - 2f > limit) continue
+                    val rec = table.stars.getInt((first + k) * 8 + 4)
+                    if ((rec and 255) / 16f - 2f > limit) continue
+                    if (keep < 1f && ((rec ushr 16).toFloat() * 0.6180339f) % 1f >= keep) continue // the same rule as earth.frag on the PC
                     if ((n + 1) * FLOATS > out.size) out = out.copyOf(out.size * 2)
                     n = addStar(out, n, first + k, cx, cy)
                 }

@@ -6,48 +6,324 @@
   "preview": "preview.jpg",
   "general": {
     "properties": {
-      "schemecolor": { "order": 0, "text": "ui_browse_properties_scheme_color", "type": "color", "value": "0 0 0" },
-
-      "earthsize": { "order": 1, "text": "Earth size (%)", "type": "slider", "min": 60, "max": 100, "step": 1, "value": 90 },
-      "orbitminutes": { "order": 2, "text": "Orbit time (min)", "type": "slider", "min": 1, "max": 120, "step": 1, "value": 24 },
+      "schemecolor": {
+        "order": 0,
+        "text": "ui_browse_properties_scheme_color",
+        "type": "color",
+        "value": "0 0 0"
+      },
+      "groupview": {
+        "order": 100,
+        "text": "View and motion",
+        "type": "group"
+      },
+      "earthsize": {
+        "order": 101,
+        "text": "Earth size (%)",
+        "type": "slider",
+        "min": 60,
+        "max": 100,
+        "step": 1,
+        "value": 90
+      },
+      "fixedview": {
+        "text": "Fixed view (no orbit)",
+        "type": "bool",
+        "value": false,
+        "order": 102
+      },
+      "latitude": {
+        "order": 103,
+        "text": "Camera latitude",
+        "type": "slider",
+        "min": -60,
+        "max": 60,
+        "step": 1,
+        "value": 21
+      },
+      "longitude": {
+        "text": "Longitude (- west / + east)",
+        "type": "slider",
+        "min": -180,
+        "max": 180,
+        "step": 1,
+        "value": 0,
+        "condition": "fixedview.value == true",
+        "order": 104
+      },
+      "orbitminutes": {
+        "order": 105,
+        "text": "Orbit time (min)",
+        "type": "slider",
+        "min": 1,
+        "max": 120,
+        "step": 1,
+        "value": 24,
+        "condition": "fixedview.value == false"
+      },
       "orbitdirection": {
-        "order": 3, "text": "Earth turning", "type": "combo", "value": "0",
-        "options": [ { "label": "Left to right", "value": "0" }, { "label": "Right to left", "value": "1" } ]
+        "order": 106,
+        "text": "Earth turning",
+        "type": "combo",
+        "value": "0",
+        "options": [
+          {
+            "label": "Left to right",
+            "value": "0"
+          },
+          {
+            "label": "Right to left",
+            "value": "1"
+          }
+        ],
+        "condition": "fixedview.value == false"
       },
-      "latitude": { "order": 4, "text": "Camera latitude", "type": "slider", "min": -60, "max": 60, "step": 1, "value": 21 },
-      "starbrightness": { "order": 5, "text": "Star brightness (%)", "type": "slider", "min": 25, "max": 150, "step": 5, "value": 100 },
+      "groupspace": {
+        "order": 200,
+        "text": "Space",
+        "type": "group"
+      },
+      "stardensity": {
+        "text": "Star density (%)",
+        "type": "slider",
+        "min": 0,
+        "max": 100,
+        "step": 5,
+        "value": 100,
+        "order": 201
+      },
+      "starsize": {
+        "text": "Star size (%)",
+        "type": "slider",
+        "min": 50,
+        "max": 200,
+        "step": 5,
+        "value": 100,
+        "condition": "stardensity.value > 0",
+        "order": 202
+      },
+      "starbrightness": {
+        "order": 203,
+        "text": "Star brightness (%)",
+        "type": "slider",
+        "min": 25,
+        "max": 150,
+        "step": 5,
+        "value": 100,
+        "condition": "stardensity.value > 0"
+      },
       "skymotion": {
-        "order": 6, "text": "Star motion", "type": "combo", "value": "0",
-        "options": [ { "label": "Slow drift", "value": "0" }, { "label": "Real sky", "value": "1" } ]
+        "order": 204,
+        "text": "Sky motion",
+        "type": "combo",
+        "value": "0",
+        "options": [
+          {
+            "label": "Slow drift",
+            "value": "0"
+          },
+          {
+            "label": "Real sky",
+            "value": "1"
+          }
+        ],
+        "condition": "stardensity.value > 0 || skyglow.value == true"
       },
-
-      "clouds": { "order": 10, "text": "Clouds", "type": "bool", "value": true },
-      "cirrus": { "order": 11, "text": "Cirrus clouds", "type": "bool", "value": true },
-      "citylights": { "order": 12, "text": "City lights", "type": "bool", "value": true },
-      "aurora": { "order": 13, "text": "Aurora", "type": "bool", "value": true },
-      "airglow": { "order": 14, "text": "Airglow", "type": "bool", "value": true },
-      "lightning": { "order": 15, "text": "Lightning", "type": "bool", "value": true },
-      "sun": { "order": 16, "text": "Sun", "type": "bool", "value": true },
-      "moon": { "order": 17, "text": "Moon", "type": "bool", "value": true },
-      "lightningrate": { "order": 18, "text": "Lightning rate (%)", "type": "slider", "min": 25, "max": 500, "step": 25, "value": 100 },
-      "cloudspeed": { "order": 19, "text": "Cloud speed (%)", "type": "slider", "min": 0, "max": 300, "step": 10, "value": 100 },
+      "skyglow": {
+        "order": 205,
+        "text": "Milky Way and space glow",
+        "type": "bool",
+        "value": true
+      },
+      "sun": {
+        "order": 206,
+        "text": "Sun",
+        "type": "bool",
+        "value": true
+      },
+      "moon": {
+        "order": 207,
+        "text": "Moon",
+        "type": "bool",
+        "value": true
+      },
+      "sunmoonblur": {
+        "order": 208,
+        "text": "Smooth Sun and Moon",
+        "type": "bool",
+        "value": true,
+        "condition": "fixedview.value == false && (sun.value == true || moon.value == true)"
+      },
+      "groupearth": {
+        "order": 300,
+        "text": "Earth and effects",
+        "type": "group"
+      },
+      "clouds": {
+        "order": 301,
+        "text": "Clouds",
+        "type": "bool",
+        "value": true
+      },
+      "cirrus": {
+        "order": 302,
+        "text": "Cirrus clouds",
+        "type": "bool",
+        "value": true,
+        "condition": "clouds.value == true"
+      },
+      "cloudspeed": {
+        "order": 303,
+        "text": "Cloud speed (%)",
+        "type": "slider",
+        "min": 0,
+        "max": 300,
+        "step": 10,
+        "value": 100,
+        "condition": "clouds.value == true"
+      },
       "clouddirection": {
-        "order": 20, "text": "Cloud direction", "type": "combo", "value": "0",
-        "options": [ { "label": "East", "value": "0" }, { "label": "West", "value": "1" } ]
+        "order": 304,
+        "text": "Cloud direction",
+        "type": "combo",
+        "value": "0",
+        "options": [
+          {
+            "label": "East",
+            "value": "0"
+          },
+          {
+            "label": "West",
+            "value": "1"
+          }
+        ],
+        "condition": "clouds.value == true && cloudspeed.value > 0"
       },
-
-      "fps": { "order": 21, "text": "Frame rate", "type": "slider", "min": 5, "max": 60, "step": 1, "value": 30 },
-      "renderscale": { "order": 22, "text": "Render resolution", "type": "slider", "min": 0.5, "max": 2.0, "step": 0.05, "value": 1.0 },
+      "citylights": {
+        "order": 305,
+        "text": "City lights",
+        "type": "bool",
+        "value": true
+      },
+      "aurora": {
+        "order": 306,
+        "text": "Aurora",
+        "type": "bool",
+        "value": true
+      },
+      "aurorastrength": {
+        "text": "Aurora strength (%)",
+        "type": "slider",
+        "min": 0,
+        "max": 200,
+        "step": 5,
+        "value": 100,
+        "condition": "aurora.value == true",
+        "order": 307
+      },
+      "airglow": {
+        "order": 308,
+        "text": "Airglow",
+        "type": "bool",
+        "value": true
+      },
+      "airglowstrength": {
+        "text": "Airglow strength (%)",
+        "type": "slider",
+        "min": 0,
+        "max": 200,
+        "step": 5,
+        "value": 100,
+        "condition": "airglow.value == true",
+        "order": 309
+      },
+      "lightning": {
+        "order": 310,
+        "text": "Lightning",
+        "type": "bool",
+        "value": true,
+        "condition": "clouds.value == true"
+      },
+      "lightningrate": {
+        "order": 311,
+        "text": "Lightning rate (%)",
+        "type": "slider",
+        "min": 25,
+        "max": 500,
+        "step": 25,
+        "value": 100,
+        "condition": "clouds.value == true && lightning.value == true"
+      },
+      "groupquality": {
+        "order": 400,
+        "text": "Performance and quality",
+        "type": "group"
+      },
+      "fps": {
+        "order": 401,
+        "text": "Frame rate",
+        "type": "slider",
+        "min": 5,
+        "max": 60,
+        "step": 1,
+        "value": 30
+      },
+      "renderscale": {
+        "order": 402,
+        "text": "Render resolution",
+        "type": "slider",
+        "min": 0.5,
+        "max": 2.0,
+        "step": 0.05,
+        "value": 1.0
+      },
       "texturequality": {
-        "order": 23, "text": "Map quality", "type": "combo", "value": "0",
-        "options": [ { "label": "Low (2048)", "value": "2" }, { "label": "Standard (4096)", "value": "0" }, { "label": "High (8192)", "value": "1" } ]
+        "order": 403,
+        "text": "Map quality",
+        "type": "combo",
+        "value": "0",
+        "options": [
+          {
+            "label": "Low (2048)",
+            "value": "2"
+          },
+          {
+            "label": "Standard (4096)",
+            "value": "0"
+          },
+          {
+            "label": "High (8192)",
+            "value": "1"
+          }
+        ]
       },
       "effectquality": {
-        "order": 24, "text": "Effect quality", "type": "combo", "value": "0",
-        "options": [ { "label": "High", "value": "0" }, { "label": "Medium", "value": "1" }, { "label": "Low", "value": "2" } ]
+        "order": 404,
+        "text": "Effect quality",
+        "type": "combo",
+        "value": "0",
+        "options": [
+          {
+            "label": "High",
+            "value": "0"
+          },
+          {
+            "label": "Medium",
+            "value": "1"
+          },
+          {
+            "label": "Low",
+            "value": "2"
+          }
+        ]
       },
-      "sharpclouds": { "order": 25, "text": "Sharp cloud edges", "type": "bool", "value": true },
-      "sunmoonblur": { "order": 26, "text": "Smooth Sun and Moon", "type": "bool", "value": true }
+      "sharpclouds": {
+        "order": 405,
+        "text": "Sharp cloud edges",
+        "type": "bool",
+        "value": true,
+        "condition": "clouds.value == true"
+      }
     }
   }
 }
